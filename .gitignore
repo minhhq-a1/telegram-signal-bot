@@ -1,10 +1,39 @@
-# Personal AI settings (không commit)
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment Variables (🔒 CRITICAL: Never commit these)
+.env
+.env.*
+!.env.example
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+postgres_data/
+
+# AI Agent Settings
 .antigravity/
 .cursor/
-
-# Commit những file này (shared team config)
-# AGENTS.md
-# GEMINI.md
-# .agents/skills/
-# .agents/workflows/
-# docs/
