@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Bot Analytics</title>
+    <meta name="description" content="Real-time analytics dashboard for Telegram Signal Bot V1">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2332;
+            --bg-card-hover: #1f2b3d;
+            --border: #2a3548;
+            --text-primary: #f0f4f8;
+            --text-secondary: #8899aa;
+            --text-muted: #5c6b7e;
+            --accent-green: #00e68a;
+            --accent-green-dim: rgba(0, 230, 138, 0.15);
+            --accent-red: #ff4d6a;
+            --accent-red-dim: rgba(255, 77, 106, 0.15);
+            --accent-yellow: #ffc554;
+            --accent-yellow-dim: rgba(255, 197, 84, 0.15);
+            --accent-blue: #3b82f6;
+            --accent-blue-dim: rgba(59, 130, 246, 0.15);
+            --accent-purple: #a78bfa;
+            --accent-purple-dim: rgba(167, 139, 250, 0.15);
+            --accent-cyan: #22d3ee;
+            --gradient-green: linear-gradient(135deg, #00e68a, #00b368);
+            --gradient-red: linear-gradient(135deg, #ff4d6a, #e0334f);
+            --gradient-yellow: linear-gradient(135deg, #ffc554, #e6a530);
+            --gradient-blue: linear-gradient(135deg, #3b82f6, #2563eb);
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(180deg, rgba(17, 24, 39, 0.95) 0%, rgba(10, 14, 23, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 20px 32px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-green);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--bg-primary);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .header h1 span { color: var(--accent-green); }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .period-selector {
+            display: flex;
+            background: var(--bg-card);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .period-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .period-btn:hover { color: var(--text-primary); background: var(--bg-card-hover); }
+        .period-btn.active { color: var(--accent-green); background: var(--accent-green-dim); }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 230, 138, 0.5); }
+            50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(0, 230, 138, 0); }
+        }
+
+        .refresh-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border-radius: var(--radius-sm);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .refresh-btn:hover { border-color: var(--accent-green); color: var(--accent-green); }
+
+        /* Main */
+        .main { padding: 24px 32px; max-width: 1600px; margin: 0 auto; }
+
+        /* Stat Cards */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: var(--radius) var(--radius) 0 0;
+        }
+
+        .stat-card:nth-child(1)::before { background: var(--gradient-blue); }
+        .stat-card:nth-child(2)::before { background: var(--gradient-green); }
+        .stat-card:nth-child(3)::before { background: var(--gradient-yellow); }
+        .stat-card:nth-child(4)::before { background: var(--gradient-red); }
+        .stat-card:nth-child(5)::before { background: linear-gradient(135deg, var(--accent-purple), #7c3aed); }
+        .stat-card:nth-child(6)::before { background: linear-gradient(135deg, var(--accent-cyan), #06b6d4); }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(255,255,255,0.1);
+            box-shadow: var(--shadow);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1;
+        }
+
+        .stat-sub {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        /* Chart Section */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+
+        .chart-card h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .chart-container { position: relative; height: 280px; }
+
+        /* Filter Table */
+        .filter-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .filter-section h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 10px;
+        }
+
+        .filter-rule {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.15s;
+        }
+
+        .filter-rule:hover { border-color: rgba(255,255,255,0.1); }
+
+        .filter-rule-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+
+        .filter-badges { display: flex; gap: 6px; }
+
+        .badge {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-pass { background: var(--accent-green-dim); color: var(--accent-green); }
+        .badge-warn { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
+        .badge-fail { background: var(--accent-red-dim); color: var(--accent-red); }
+
+        /* Signal Timeline */
+        .timeline-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+        }
+
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .timeline-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .signal-count {
+            font-size: 12px;
+            color: var(--text-muted);
+            background: var(--bg-secondary);
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        .timeline-list { display: flex; flex-direction: column; gap: 8px; max-height: 600px; overflow-y: auto; }
+
+        .timeline-list::-webkit-scrollbar { width: 6px; }
+        .timeline-list::-webkit-scrollbar-track { background: transparent; }
+        .timeline-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .signal-row {
+            display: grid;
+            grid-template-columns: 60px 100px 60px 80px 90px 90px 60px 80px 1fr;
+            gap: 12px;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            transition: all 0.15s;
+        }
+
+        .signal-row:hover {
+            background: var(--bg-card-hover);
+            border-color: rgba(255,255,255,0.08);
+        }
+
+        .side-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .side-long { background: var(--accent-green-dim); color: var(--accent-green); }
+        .side-short { background: var(--accent-red-dim); color: var(--accent-red); }
+
+        .decision-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .dec-pass { background: var(--accent-green-dim); color: var(--accent-green); }
+        .dec-warn { background: var(--accent-yellow-dim); color: var(--accent-yellow); }
+        .dec-reject { background: var(--accent-red-dim); color: var(--accent-red); }
+        .dec-dup { background: var(--accent-purple-dim); color: var(--accent-purple); }
+
+        .signal-symbol { font-weight: 600; color: var(--text-primary); }
+        .signal-tf { color: var(--accent-blue); font-weight: 500; }
+        .signal-price { color: var(--text-secondary); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+        .signal-conf { color: var(--text-secondary); }
+        .signal-rr { color: var(--accent-cyan); font-weight: 600; }
+        .signal-time { color: var(--text-muted); font-size: 11px; text-align: right; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state p { font-size: 14px; }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent-green);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .header { padding: 16px; flex-direction: column; gap: 12px; }
+            .main { padding: 16px; }
+            .chart-grid { grid-template-columns: 1fr; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .signal-row { grid-template-columns: 50px 80px 50px 70px 1fr; font-size: 12px; }
+            .signal-row > :nth-child(n+6) { display: none; }
+        }
+
+        @media (max-width: 600px) {
+            .stat-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header" id="header">
+        <div class="header-left">
+            <div class="logo">⚡</div>
+            <h1>Signal Bot <span>Analytics</span></h1>
+        </div>
+        <div class="header-right">
+            <div class="period-selector">
+                <button class="period-btn" data-days="1">24h</button>
+                <button class="period-btn active" data-days="7">7d</button>
+                <button class="period-btn" data-days="14">14d</button>
+                <button class="period-btn" data-days="30">30d</button>
+            </div>
+            <div class="live-dot"></div>
+            <button class="refresh-btn" id="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Stat Cards -->
+        <section class="stat-grid" id="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Signals</div>
+                <div class="stat-value" id="stat-total">—</div>
+                <div class="stat-sub" id="stat-total-sub"></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Passed (Main)</div>
+                <div class="stat-value" id="stat-pass" style="color: var(--accent-green)">—</div>
+                <div class="stat-sub" id="stat-pass-sub"></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Warnings</div>
+                <div class="stat-value" id="stat-warn" style="color: var(--accent-yellow)">—</div>
+                <div class="stat-sub" id="stat-warn-sub"></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Rejected</div>
+                <div class="stat-value" id="stat-reject" style="color: var(--accent-red)">—</div>
+                <div class="stat-sub" id="stat-reject-sub"></div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Confidence</div>
+                <div class="stat-value" id="stat-conf" style="color: var(--accent-purple)">—</div>
+                <div class="stat-sub">Indicator confidence</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Delivery Rate</div>
+                <div class="stat-value" id="stat-delivery" style="color: var(--accent-cyan)">—</div>
+                <div class="stat-sub" id="stat-delivery-sub"></div>
+            </div>
+        </section>
+
+        <!-- Charts -->
+        <section class="chart-grid">
+            <div class="chart-card">
+                <h3>Decision Distribution</h3>
+                <div class="chart-container">
+                    <canvas id="chart-decisions"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>Daily Signal Volume</h3>
+                <div class="chart-container">
+                    <canvas id="chart-daily"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>By Timeframe</h3>
+                <div class="chart-container">
+                    <canvas id="chart-timeframe"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3>By Strategy</h3>
+                <div class="chart-container">
+                    <canvas id="chart-strategy"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filter Rules -->
+        <section class="filter-section">
+            <h3>Filter Engine Performance</h3>
+            <div class="filter-grid" id="filter-grid">
+                <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </section>
+
+        <!-- Signal Timeline -->
+        <section class="timeline-section">
+            <div class="timeline-header">
+                <h3>Recent Signals</h3>
+                <span class="signal-count" id="signal-count">— signals</span>
+            </div>
+            <div class="timeline-list" id="timeline-list">
+                <div class="loading"><div class="spinner"></div></div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // State
+        let currentDays = 7;
+        let charts = {};
+
+        // Period selector
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelector('.period-btn.active')?.classList.remove('active');
+                btn.classList.add('active');
+                currentDays = parseInt(btn.dataset.days);
+                loadAll();
+            });
+        });
+
+        // API calls
+        async function fetchJSON(url) {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        // Chart defaults
+        Chart.defaults.color = '#8899aa';
+        Chart.defaults.borderColor = 'rgba(42, 53, 72, 0.5)';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+
+        const COLORS = {
+            green: '#00e68a',
+            greenDim: 'rgba(0, 230, 138, 0.2)',
+            red: '#ff4d6a',
+            redDim: 'rgba(255, 77, 106, 0.2)',
+            yellow: '#ffc554',
+            yellowDim: 'rgba(255, 197, 84, 0.2)',
+            blue: '#3b82f6',
+            blueDim: 'rgba(59, 130, 246, 0.2)',
+            purple: '#a78bfa',
+            purpleDim: 'rgba(167, 139, 250, 0.2)',
+            cyan: '#22d3ee',
+            cyanDim: 'rgba(34, 211, 238, 0.2)',
+        };
+
+        function destroyChart(id) {
+            if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+        }
+
+        // Load summary
+        async function loadSummary() {
+            const data = await fetchJSON(`/api/v1/analytics/summary?days=${currentDays}`);
+
+            const total = data.total_signals;
+            const pass = data.decisions?.PASS_MAIN || 0;
+            const warn = data.decisions?.PASS_WARNING || 0;
+            const reject = data.decisions?.REJECT || 0;
+
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-total-sub').textContent = `Last ${currentDays} days`;
+            document.getElementById('stat-pass').textContent = pass;
+            document.getElementById('stat-pass-sub').textContent = total ? `${((pass/total)*100).toFixed(1)}% of total` : '';
+            document.getElementById('stat-warn').textContent = warn;
+            document.getElementById('stat-warn-sub').textContent = total ? `${((warn/total)*100).toFixed(1)}% of total` : '';
+            document.getElementById('stat-reject').textContent = reject;
+            document.getElementById('stat-reject-sub').textContent = total ? `${((reject/total)*100).toFixed(1)}% of total` : '';
+            document.getElementById('stat-conf').textContent = data.avg_confidence ? `${(data.avg_confidence * 100).toFixed(0)}%` : '—';
+
+            const sent = data.telegram_delivery?.SENT || 0;
+            const failed = data.telegram_delivery?.FAILED || 0;
+            const tgTotal = sent + failed;
+            document.getElementById('stat-delivery').textContent = tgTotal ? `${((sent/tgTotal)*100).toFixed(0)}%` : '—';
+            document.getElementById('stat-delivery-sub').textContent = tgTotal ? `${sent} sent / ${failed} failed` : 'No messages yet';
+
+            // Decision pie chart
+            destroyChart('decisions');
+            const ctx = document.getElementById('chart-decisions').getContext('2d');
+            charts['decisions'] = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['PASS_MAIN', 'PASS_WARNING', 'REJECT', 'DUPLICATE'],
+                    datasets: [{
+                        data: [pass, warn, reject, data.decisions?.DUPLICATE || 0],
+                        backgroundColor: [COLORS.green, COLORS.yellow, COLORS.red, COLORS.purple],
+                        borderWidth: 0,
+                        hoverOffset: 8,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '65%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+                    }
+                }
+            });
+
+            // Timeframe bar chart
+            destroyChart('timeframe');
+            const tfLabels = Object.keys(data.by_timeframe);
+            const tfValues = Object.values(data.by_timeframe);
+            const ctxTF = document.getElementById('chart-timeframe').getContext('2d');
+            charts['timeframe'] = new Chart(ctxTF, {
+                type: 'bar',
+                data: {
+                    labels: tfLabels,
+                    datasets: [{
+                        data: tfValues,
+                        backgroundColor: COLORS.blueDim,
+                        borderColor: COLORS.blue,
+                        borderWidth: 1.5,
+                        borderRadius: 6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // Strategy chart
+            destroyChart('strategy');
+            const stratLabels = Object.keys(data.by_strategy);
+            const stratValues = Object.values(data.by_strategy);
+            const stratColors = [COLORS.cyan, COLORS.purple, COLORS.green, COLORS.yellow, COLORS.red, COLORS.blue];
+            const ctxStrat = document.getElementById('chart-strategy').getContext('2d');
+            charts['strategy'] = new Chart(ctxStrat, {
+                type: 'doughnut',
+                data: {
+                    labels: stratLabels,
+                    datasets: [{
+                        data: stratValues,
+                        backgroundColor: stratColors.slice(0, stratLabels.length),
+                        borderWidth: 0,
+                        hoverOffset: 8,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '55%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+                    }
+                }
+            });
+        }
+
+        // Load daily chart
+        async function loadDaily() {
+            const data = await fetchJSON(`/api/v1/analytics/daily?days=${currentDays}`);
+            const days = Object.keys(data.daily).sort();
+
+            destroyChart('daily');
+            const ctx = document.getElementById('chart-daily').getContext('2d');
+            charts['daily'] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: days.map(d => d.slice(5)),  // MM-DD
+                    datasets: [
+                        {
+                            label: 'PASS',
+                            data: days.map(d => data.daily[d].PASS_MAIN || 0),
+                            backgroundColor: COLORS.greenDim,
+                            borderColor: COLORS.green,
+                            borderWidth: 1.5,
+                            borderRadius: 4,
+                        },
+                        {
+                            label: 'WARN',
+                            data: days.map(d => data.daily[d].PASS_WARNING || 0),
+                            backgroundColor: COLORS.yellowDim,
+                            borderColor: COLORS.yellow,
+                            borderWidth: 1.5,
+                            borderRadius: 4,
+                        },
+                        {
+                            label: 'REJECT',
+                            data: days.map(d => data.daily[d].REJECT || 0),
+                            backgroundColor: COLORS.redDim,
+                            borderColor: COLORS.red,
+                            borderWidth: 1.5,
+                            borderRadius: 4,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { display: false } },
+                        y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
+                }
+            });
+        }
+
+        // Load filter stats
+        async function loadFilters() {
+            const data = await fetchJSON(`/api/v1/analytics/filters/stats?days=${currentDays}`);
+            const grid = document.getElementById('filter-grid');
+            const rules = data.filter_rules;
+
+            if (!rules || Object.keys(rules).length === 0) {
+                grid.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>No filter data yet</p></div>';
+                return;
+            }
+
+            grid.innerHTML = Object.entries(rules).map(([code, counts]) => `
+                <div class="filter-rule">
+                    <span class="filter-rule-name">${code}</span>
+                    <div class="filter-badges">
+                        ${counts.PASS ? `<span class="badge badge-pass">✓ ${counts.PASS}</span>` : ''}
+                        ${counts.WARN ? `<span class="badge badge-warn">⚠ ${counts.WARN}</span>` : ''}
+                        ${counts.FAIL ? `<span class="badge badge-fail">✗ ${counts.FAIL}</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Load timeline
+        async function loadTimeline() {
+            const data = await fetchJSON(`/api/v1/analytics/signals/timeline?days=${currentDays}&limit=50`);
+            const list = document.getElementById('timeline-list');
+            document.getElementById('signal-count').textContent = `${data.count} signals`;
+
+            if (!data.signals || data.signals.length === 0) {
+                list.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>No signals in this period</p></div>';
+                return;
+            }
+
+            list.innerHTML = data.signals.map(s => {
+                const sideClass = s.side === 'LONG' ? 'side-long' : 'side-short';
+                let decClass = 'dec-pass';
+                if (s.decision === 'PASS_WARNING') decClass = 'dec-warn';
+                else if (s.decision === 'REJECT') decClass = 'dec-reject';
+                else if (s.decision === 'DUPLICATE') decClass = 'dec-dup';
+
+                const time = s.created_at ? new Date(s.created_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }) : '—';
+                const rr = s.risk_reward ? s.risk_reward.toFixed(2) : '—';
+                const conf = s.confidence ? `${(s.confidence * 100).toFixed(0)}%` : '—';
+                const price = s.entry_price ? s.entry_price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+
+                return `<div class="signal-row">
+                    <span class="side-badge ${sideClass}">${s.side}</span>
+                    <span class="signal-symbol">${s.symbol}</span>
+                    <span class="signal-tf">${s.timeframe}</span>
+                    <span class="signal-price">${price}</span>
+                    <span class="decision-badge ${decClass}">${s.decision || '—'}</span>
+                    <span class="signal-conf">${conf}</span>
+                    <span class="signal-rr">RR ${rr}</span>
+                    <span class="signal-price">${s.strategy || '—'}</span>
+                    <span class="signal-time">${time}</span>
+                </div>`;
+            }).join('');
+        }
+
+        // Load all
+        async function loadAll() {
+            try {
+                await Promise.all([loadSummary(), loadDaily(), loadFilters(), loadTimeline()]);
+            } catch (err) {
+                console.error('Dashboard load error:', err);
+            }
+        }
+
+        // Init
+        loadAll();
+
+        // Auto-refresh every 30s
+        setInterval(loadAll, 30000);
+    </script>
+</body>
+</html>

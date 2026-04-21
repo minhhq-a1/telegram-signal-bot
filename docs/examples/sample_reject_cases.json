@@ -1,0 +1,97 @@
+{
+  "_comment": "Collection payload mẫu để test reject cases. Dùng từng object riêng lẻ.",
+
+  "invalid_secret": {
+    "secret": "wrong-secret",
+    "signal_id": "test-reject-001",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "timestamp": "2026-04-18T15:30:00Z",
+    "price": 68250.5,
+    "source": "test",
+    "confidence": 0.82,
+    "metadata": {"entry": 68250.5, "stop_loss": 67980.0, "take_profit": 68740.0}
+  },
+
+  "unsupported_timeframe_30s": {
+    "secret": "CHANGE_ME",
+    "signal_id": "test-reject-002",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "30S",
+    "timestamp": "2026-04-18T15:30:00Z",
+    "price": 68250.5,
+    "source": "test",
+    "confidence": 0.82,
+    "metadata": {"entry": 68250.5, "stop_loss": 67980.0, "take_profit": 68740.0}
+  },
+
+  "confidence_below_threshold_5m": {
+    "secret": "CHANGE_ME",
+    "signal_id": "test-reject-003",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "timestamp": "2026-04-18T15:30:00Z",
+    "price": 68250.5,
+    "source": "test",
+    "confidence": 0.75,
+    "metadata": {
+      "entry": 68250.5, "stop_loss": 67980.0, "take_profit": 68740.0,
+      "regime": "WEAK_TREND_DOWN", "vol_regime": "TRENDING_LOW_VOL"
+    }
+  },
+
+  "direction_sanity_wrong_long": {
+    "secret": "CHANGE_ME",
+    "signal_id": "test-reject-004",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "timestamp": "2026-04-18T15:30:00Z",
+    "price": 68250.5,
+    "source": "test",
+    "confidence": 0.82,
+    "metadata": {
+      "entry": 68250.5,
+      "stop_loss": 68500.0,
+      "take_profit": 67000.0
+    }
+  },
+
+  "regime_hard_block_long_downtrend": {
+    "secret": "CHANGE_ME",
+    "signal_id": "test-reject-005",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "timestamp": "2026-04-18T15:30:00Z",
+    "price": 68250.5,
+    "source": "test",
+    "confidence": 0.82,
+    "metadata": {
+      "entry": 68250.5, "stop_loss": 67980.0, "take_profit": 68740.0,
+      "regime": "STRONG_TREND_DOWN",
+      "vol_regime": "TRENDING_HIGH_VOL"
+    }
+  },
+
+  "warning_ranging_high_vol": {
+    "_note": "PASS_WARNING — có WARN MEDIUM, không có FAIL",
+    "secret": "CHANGE_ME",
+    "signal_id": "test-warn-001",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "5m",
+    "timestamp": "2026-04-18T15:30:00Z",
+    "price": 68250.5,
+    "source": "test",
+    "confidence": 0.82,
+    "metadata": {
+      "entry": 68250.5, "stop_loss": 67980.0, "take_profit": 68740.0,
+      "regime": "WEAK_TREND_DOWN",
+      "vol_regime": "RANGING_HIGH_VOL"
+    }
+  }
+}

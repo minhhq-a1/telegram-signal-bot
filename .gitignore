@@ -1,0 +1,10 @@
+# Personal AI settings (không commit)
+.antigravity/
+.cursor/
+
+# Commit những file này (shared team config)
+# AGENTS.md
+# GEMINI.md
+# .agents/skills/
+# .agents/workflows/
+# docs/
