@@ -20,10 +20,6 @@ class Settings(BaseSettings):
     telegram_warn_chat_id: str
     telegram_admin_chat_id: str
 
-    # System Logic
-    enable_news_block: bool = True
-    log_reject_to_admin: bool = True
-
     # Dashboard
     dashboard_token: str | None = None
 
