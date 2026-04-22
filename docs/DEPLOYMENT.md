@@ -19,7 +19,7 @@
 Repo hiện hỗ trợ GitHub Actions cho:
 - `CI`: chạy test + Docker build validation
 - `CD`: build/push image lên GHCR khi merge vào `main`
-- tùy chọn trigger Railway deploy qua `RAILWAY_DEPLOY_HOOK_URL`
+- tùy chọn deploy Railway qua `RAILWAY_TOKEN` bằng Railway CLI
 
 Xem chi tiết tại:
 - [GITHUB_CICD.md](./GITHUB_CICD.md)
