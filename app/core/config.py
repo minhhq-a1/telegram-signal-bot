@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     enable_news_block: bool = True
     log_reject_to_admin: bool = True
 
+    # Dashboard
+    dashboard_token: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env", 
         env_file_encoding="utf-8",
