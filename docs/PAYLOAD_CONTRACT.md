@@ -188,14 +188,9 @@ tv-btcusdt-5m-1713452400000-long-long_v73
 tv-btcusdt-3m-1713452280000-short-short_squeeze
 ```
 
-**Fallback** (nếu Pine Script chưa generate được):
-```python
-import hashlib
-fallback = hashlib.md5(
-    f"{symbol}{timeframe}{side}{bar_time}{entry_price}{signal_type}".encode()
-).hexdigest()[:16]
-signal_id = f"fallback-{fallback}"
-```
+`signal_id` là **required** trong V1 production contract.
+Bot không tự generate fallback ở server side, để tránh gộp nhầm hai signal hợp lệ thành một
+idempotency key.
 
 ---
 

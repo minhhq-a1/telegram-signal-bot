@@ -259,7 +259,7 @@ V1.1+ — Khi có independent market data:
 
 ### NEWS_BLOCK
 ```
-Config: ENABLE_NEWS_BLOCK=true
+Config: enable_news_block=true
 
 Query bảng market_events:
     WHERE is_active = true
