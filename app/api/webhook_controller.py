@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ router = APIRouter(tags=["webhooks"])
 )
 async def handle_tradingview_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     raw_body_bytes = await request.body()
@@ -53,5 +54,8 @@ async def handle_tradingview_webhook(
             status_code=result.status_code,
             content=result.body.model_dump(mode="json"),
         )
+
+    if result.notification_job is not None:
+        background_tasks.add_task(service.deliver_notification, result.notification_job)
 
     return result.body
