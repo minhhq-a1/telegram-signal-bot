@@ -168,9 +168,9 @@ SHORT: take_profit < entry < stop_loss
 ### Symbol & Timeframe whitelist
 ```
 Allowed symbols:    BTCUSDT, BTCUSD
-Allowed timeframes: 1m, 3m, 5m, 12m, 15m
+Allowed timeframes: 1m, 3m, 5m, 12m, 15m, 30m, 1h
 ```
-> TF 30S, 45S, 2m, 4m, 6m–11m, 13m–20m bị reject bởi server (quá nhiều noise hoặc thiếu dữ liệu)
+> TF 30S, 45S, 2m, 4m, 6m–11m, 13m–20m, 4h, 1d bị reject bởi server (quá nhiều noise, thiếu tuning backend, hoặc chưa nằm trong rollout hiện tại)
 
 ---
 

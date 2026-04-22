@@ -4,9 +4,9 @@ from app.services.filter_engine import FilterEngine
 def make_filter_engine(config_overrides=None):
     config = {
         "allowed_symbols": ["BTCUSDT"],
-        "allowed_timeframes": ["1m","3m","5m","12m","15m"],
-        "confidence_thresholds": {"5m": 0.78},
-        "cooldown_minutes": {"5m": 10},
+        "allowed_timeframes": ["1m","3m","5m","12m","15m","30m","1h"],
+        "confidence_thresholds": {"5m": 0.78, "30m": 0.72, "1h": 0.70},
+        "cooldown_minutes": {"5m": 10, "30m": 45, "1h": 90},
         "rr_min_base": 1.5,
         "rr_min_squeeze": 2.0,
         "duplicate_price_tolerance_pct": 0.002,
@@ -206,3 +206,19 @@ def test_pass_main_without_warnings_has_clear_reason():
     result = engine.run(make_signal())
 
     assert result.decision_reason == "Passed all filters"
+
+
+def test_30m_timeframe_is_allowed_with_its_threshold():
+    engine = make_filter_engine()
+
+    result = engine.run(make_signal(timeframe="30m", indicator_confidence=0.72))
+
+    assert result.final_decision == "PASS_MAIN"
+
+
+def test_1h_timeframe_is_allowed_with_its_threshold():
+    engine = make_filter_engine()
+
+    result = engine.run(make_signal(timeframe="1h", indicator_confidence=0.70))
+
+    assert result.final_decision == "PASS_MAIN"
