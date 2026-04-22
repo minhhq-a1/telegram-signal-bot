@@ -18,6 +18,7 @@ os.environ.setdefault("telegram_admin_chat_id", "admin-chat")
 from app.core.database import get_db  # noqa: E402
 from app.domain.models import Base  # noqa: E402
 from app.main import app  # noqa: E402
+from app.repositories.config_repo import ConfigRepository  # noqa: E402
 
 
 @pytest.fixture
@@ -42,6 +43,7 @@ def db_session(tmp_path) -> Generator[Session, None, None]:
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
+        ConfigRepository.reset_cache()  # prevent cache leak between tests
 
 
 @pytest.fixture

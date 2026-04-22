@@ -1,4 +1,3 @@
-from typing import Optional
 import time
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -11,7 +10,7 @@ logger = get_logger(__name__)
 
 class ConfigRepository:
     # Class-level cache variables (shared across requests in same worker)
-    _cached_config: Optional[dict] = None
+    _cached_config: dict | None = None
     _cache_time: float = 0.0
     _CACHE_TTL: int = 30  # seconds
     _DEFAULT_SIGNAL_BOT_CONFIG: dict = {
@@ -30,6 +29,12 @@ class ConfigRepository:
 
     def __init__(self, db: Session):
         self.db = db
+
+    @classmethod
+    def reset_cache(cls) -> None:
+        """Reset class-level cache. Gọi trong test teardown để tránh cache leak."""
+        cls._cached_config = None
+        cls._cache_time = 0.0
 
     def get_signal_bot_config(self) -> dict:
         """

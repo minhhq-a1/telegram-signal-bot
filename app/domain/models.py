@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List
 from sqlalchemy import String, Numeric, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
@@ -11,52 +11,52 @@ class WebhookEvent(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    source_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    http_headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    http_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     raw_body: Mapped[dict] = mapped_column(JSON)
     is_valid_json: Mapped[bool] = mapped_column(default=True)
     auth_status: Mapped[AuthStatus] = mapped_column(String(32))
-    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
 
 class Signal(Base):
     __tablename__ = "signals"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    webhook_event_id: Mapped[Optional[str]] = mapped_column(ForeignKey("webhook_events.id"), nullable=True)
+    webhook_event_id: Mapped[str | None] = mapped_column(ForeignKey("webhook_events.id"), nullable=True)
     signal_id: Mapped[str] = mapped_column(String(128), unique=True)
     source: Mapped[str] = mapped_column(String(64))
     symbol: Mapped[str] = mapped_column(String(32))
-    chart_symbol: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    exchange: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    market_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    chart_symbol: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    market_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     timeframe: Mapped[str] = mapped_column(String(16))
     side: Mapped[SignalSide] = mapped_column(String(8))
     price: Mapped[float] = mapped_column(Numeric(18, 8))
     entry_price: Mapped[float] = mapped_column(Numeric(18, 8))
-    stop_loss: Mapped[Optional[float]] = mapped_column(Numeric(18, 8), nullable=True)
-    take_profit: Mapped[Optional[float]] = mapped_column(Numeric(18, 8), nullable=True)
-    risk_reward: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    risk_reward: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     indicator_confidence: Mapped[float] = mapped_column(Numeric(6, 4))
-    server_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 4), nullable=True)
-    signal_type: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    strategy: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    regime: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    vol_regime: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    atr: Mapped[Optional[float]] = mapped_column(Numeric(18, 8), nullable=True)
-    atr_pct: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
-    adx: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    rsi: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    rsi_slope: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    stoch_k: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    macd_hist: Mapped[Optional[float]] = mapped_column(Numeric(18, 8), nullable=True)
-    kc_position: Mapped[Optional[float]] = mapped_column(Numeric(10, 6), nullable=True)
-    atr_percentile: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    vol_ratio: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    squeeze_on: Mapped[Optional[bool]] = mapped_column(nullable=True)
-    squeeze_fired: Mapped[Optional[bool]] = mapped_column(nullable=True)
-    squeeze_bars: Mapped[Optional[int]] = mapped_column(nullable=True)
-    payload_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    bar_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    server_score: Mapped[float | None] = mapped_column(Numeric(6, 4), nullable=True)
+    signal_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    strategy: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    regime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    vol_regime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    atr: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    atr_pct: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    adx: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    rsi: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    rsi_slope: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    stoch_k: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    macd_hist: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    kc_position: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    atr_percentile: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    vol_ratio: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    squeeze_on: Mapped[bool | None] = mapped_column(nullable=True)
+    squeeze_fired: Mapped[bool | None] = mapped_column(nullable=True)
+    squeeze_bars: Mapped[int | None] = mapped_column(nullable=True)
+    payload_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bar_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_payload: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -75,7 +75,7 @@ class SignalFilterResult(Base):
     result: Mapped[RuleResult] = mapped_column(String(16))
     severity: Mapped[RuleSeverity] = mapped_column(String(16))
     score_delta: Mapped[float] = mapped_column(Numeric(6, 4))
-    details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     signal: Mapped["Signal"] = relationship(back_populates="filter_results")
@@ -86,8 +86,8 @@ class SignalDecision(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     signal_row_id: Mapped[str] = mapped_column(ForeignKey("signals.id"), unique=True)
     decision: Mapped[DecisionType] = mapped_column(String(32))
-    decision_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    telegram_route: Mapped[Optional[TelegramRoute]] = mapped_column(String(32), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    telegram_route: Mapped[TelegramRoute | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     signal: Mapped["Signal"] = relationship(back_populates="decision")
@@ -96,14 +96,14 @@ class TelegramMessage(Base):
     __tablename__ = "telegram_messages"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    signal_row_id: Mapped[Optional[str]] = mapped_column(ForeignKey("signals.id"), nullable=True)
+    signal_row_id: Mapped[str | None] = mapped_column(ForeignKey("signals.id"), nullable=True)
     chat_id: Mapped[str] = mapped_column(String(50))
     route: Mapped[TelegramRoute] = mapped_column(String(20))
     message_text: Mapped[str] = mapped_column(String)
-    telegram_message_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    telegram_message_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     delivery_status: Mapped[DeliveryStatus] = mapped_column(String(20))
-    error_log: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_log: Mapped[str | None] = mapped_column(String, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     signal: Mapped["Signal"] = relationship(back_populates="telegram_messages")
@@ -114,7 +114,7 @@ class SystemConfig(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     config_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     config_value: Mapped[dict] = mapped_column(JSON)
-    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class MarketEvent(Base):
@@ -126,13 +126,3 @@ class MarketEvent(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     impact: Mapped[str] = mapped_column(String(20)) # HIGH, MEDIUM, LOW
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-
-class SignalOutcome(Base):
-    __tablename__ = "signal_outcomes"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    signal_row_id: Mapped[str] = mapped_column(ForeignKey("signals.id"), unique=True)
-    is_win: Mapped[Optional[bool]] = mapped_column(nullable=True)
-    pnl_pct: Mapped[Optional[float]] = mapped_column(Numeric(10, 4), nullable=True)
-    exit_price: Mapped[Optional[float]] = mapped_column(Numeric(18, 8), nullable=True)
-    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

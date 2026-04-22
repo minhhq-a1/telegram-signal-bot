@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from app.core.enums import AuthStatus, DecisionType, DeliveryStatus, RuleResult, RuleSeverity, TelegramRoute
 from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
@@ -44,7 +45,7 @@ def test_webhook_pass_main_logs_telegram_delivery(client, db_session, monkeypatc
     payload = response.json()
     assert payload["decision"] == "PASS_MAIN"
 
-    telegram_logs = db_session.query(TelegramMessage).all()
+    telegram_logs = db_session.execute(select(TelegramMessage)).scalars().all()
     assert len(telegram_logs) == 1
     assert telegram_logs[0].route == TelegramRoute.MAIN
     assert telegram_logs[0].delivery_status == DeliveryStatus.SENT
@@ -60,7 +61,7 @@ def test_webhook_rejects_invalid_timestamp_format_with_audit_row(client, db_sess
     payload = response.json()
     assert payload["error_code"] == "INVALID_SCHEMA"
 
-    event = db_session.query(WebhookEvent).one()
+    event = db_session.execute(select(WebhookEvent)).scalars().one()
     assert event.is_valid_json is True
     assert event.auth_status == AuthStatus.MISSING
     assert event.error_message is not None
@@ -78,7 +79,7 @@ def test_webhook_logs_invalid_json_before_rejecting(client, db_session):
     payload = response.json()
     assert payload["error_code"] == "INVALID_JSON"
 
-    event = db_session.query(WebhookEvent).one()
+    event = db_session.execute(select(WebhookEvent)).scalars().one()
     assert event.is_valid_json is False
     assert event.auth_status == AuthStatus.MISSING
     assert event.error_message == "INVALID_JSON: Request body is not valid JSON"
@@ -95,7 +96,7 @@ def test_webhook_logs_invalid_schema_before_rejecting(client, db_session, valid_
     payload = response.json()
     assert payload["error_code"] == "INVALID_SCHEMA"
 
-    event = db_session.query(WebhookEvent).one()
+    event = db_session.execute(select(WebhookEvent)).scalars().one()
     assert event.is_valid_json is True
     assert event.auth_status == AuthStatus.MISSING
     assert event.error_message is not None
@@ -412,9 +413,9 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
     assert response.status_code == 200
     assert response.json()["decision"] == "PASS_MAIN"
 
-    signal = db_session.query(Signal).filter_by(signal_id="telegram-failure-audit-001").one()
-    decision = db_session.query(SignalDecision).filter_by(signal_row_id=signal.id).one()
-    telegram_log = db_session.query(TelegramMessage).filter_by(signal_row_id=signal.id).one()
+    signal = db_session.execute(select(Signal).where(Signal.signal_id == "telegram-failure-audit-001")).scalar_one_or_none()
+    decision = db_session.execute(select(SignalDecision).where(SignalDecision.signal_row_id == signal.id)).scalar_one_or_none()
+    telegram_log = db_session.execute(select(TelegramMessage).where(TelegramMessage.signal_row_id == signal.id)).scalar_one_or_none()
 
     assert decision.decision == DecisionType.PASS_MAIN
     assert telegram_log.delivery_status == DeliveryStatus.FAILED

@@ -23,22 +23,22 @@ class TelegramNotifier:
         }
         
         max_attempts = 4
-        for attempt in range(max_attempts):
-            try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for attempt in range(max_attempts):
+                try:
                     response = await client.post(self.api_url, json=payload)
                     response.raise_for_status()
                     return response.json()
-            except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
-                logger.warning(
-                    "telegram_send_failed", 
-                    extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)}
-                )
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
-                else:
-                    logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
-                    raise e  # Để notify() bắt lấy
+                except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+                    logger.warning(
+                        "telegram_send_failed",
+                        extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)}
+                    )
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
+                    else:
+                        logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
+                        raise e
 
     async def notify(self, route: str, text: str) -> tuple[str, Optional[dict], str | None]:
         """

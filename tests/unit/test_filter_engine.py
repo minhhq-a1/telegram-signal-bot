@@ -20,7 +20,6 @@ def make_filter_engine(config_overrides=None):
         config.update(config_overrides)
 
     mock_signal_repo = MagicMock()
-    mock_signal_repo.find_recent_same_side.return_value = []
     mock_signal_repo.find_recent_pass_main_same_side.return_value = []
     mock_signal_repo.find_recent_similar.return_value = []
 
