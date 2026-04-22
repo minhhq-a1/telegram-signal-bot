@@ -50,10 +50,9 @@ Xem [PAYLOAD_CONTRACT.md](./PAYLOAD_CONTRACT.md) để biết đầy đủ.
 ```json
 {
   "secret": "YOUR_SHARED_SECRET",
-  "signal_id": "tv-btcusdt-5m-1713452400000-long-long_v73",
   "signal": "long",
   "symbol": "BTCUSDT",
-  "timeframe": "5m",
+  "timeframe": "5",
   "timestamp": "2026-04-18T15:30:00Z",
   "price": 68250.5,
   "source": "Bot_Webhook_v84",
@@ -65,6 +64,12 @@ Xem [PAYLOAD_CONTRACT.md](./PAYLOAD_CONTRACT.md) để biết đầy đủ.
   }
 }
 ```
+
+`signal_id` là optional ở request. Nếu thiếu, server sẽ tự generate idempotency key deterministic từ payload sau khi normalize timeframe.
+
+Timeframe được chấp nhận theo cả 2 kiểu:
+- TradingView native: `3`, `60`, `1D`, `30S`
+- Internal canonical: `3m`, `1h`, `1d`, `30s`
 
 ### Response `200 OK` — Accepted
 

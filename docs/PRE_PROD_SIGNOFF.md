@@ -33,7 +33,7 @@ Kết quả:
 ### Các remediation quan trọng đã hoàn thành
 
 - Atomic idempotency ở DB boundary
-- `signal_id` là required field, không còn fallback yếu từ server
+- `signal_id` là idempotency key rõ ràng; nếu client không gửi thì server tự generate deterministic từ payload mạnh
 - Runtime filter config đã thống nhất hơn, gồm `enable_news_block`
 - Webhook orchestration đã tách khỏi controller sang application service
 - `decision_reason` đủ cụ thể để phục vụ QA/debug/analytics
@@ -47,7 +47,7 @@ Kết quả:
 
 - `audit-first` được giữ đúng cho invalid JSON, invalid schema, invalid secret
 - `persist trước, notify sau` vẫn đúng
-- `signal_id` là idempotency key rõ ràng và bắt buộc
+- `signal_id` là idempotency key rõ ràng, có thể do client gửi hoặc server generate
 - duplicate race không còn dễ leak `500`
 - controller không còn ôm toàn bộ orchestration logic
 

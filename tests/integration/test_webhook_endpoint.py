@@ -60,7 +60,7 @@ def test_webhook_unsupported_timeframe(client: TestClient, valid_payload: dict):
     assert response.json()["decision"] == "REJECT"
 
 
-def test_webhook_missing_signal_id_returns_invalid_schema_with_audit_row(
+def test_webhook_missing_signal_id_is_accepted_with_generated_signal_id(
     client: TestClient,
     db_session,
     valid_payload: dict,
@@ -70,13 +70,49 @@ def test_webhook_missing_signal_id_returns_invalid_schema_with_audit_row(
 
     response = client.post("/api/v1/webhooks/tradingview", json=payload)
 
-    assert response.status_code == 400
-    assert response.json()["error_code"] == "INVALID_SCHEMA"
+    assert response.status_code == 200
+    response_payload = response.json()
+    assert response_payload["status"] == "accepted"
+    assert response_payload["signal_id"].startswith("tv-btcusdt-5m-")
 
     event = db_session.query(WebhookEvent).one()
     assert event.is_valid_json is True
-    assert event.error_message is not None
-    assert "signal_id" in event.error_message
+    assert event.error_message is None
+
+
+def test_webhook_normalizes_tradingview_minute_timeframe_and_generated_signal_id(
+    client: TestClient,
+    db_session,
+    valid_payload: dict,
+):
+    payload = valid_payload.copy()
+    payload.pop("signal_id")
+    payload["timeframe"] = "3"
+
+    response = client.post("/api/v1/webhooks/tradingview", json=payload)
+
+    assert response.status_code == 200
+    response_payload = response.json()
+    assert response_payload["signal_id"].startswith("tv-btcusdt-3m-")
+
+    signal = db_session.query(Signal).one()
+    assert signal.timeframe == "3m"
+
+
+def test_webhook_generated_signal_id_still_provides_deterministic_idempotency(
+    client: TestClient,
+    valid_payload: dict,
+):
+    payload = valid_payload.copy()
+    payload.pop("signal_id")
+
+    response1 = client.post("/api/v1/webhooks/tradingview", json=payload)
+    response2 = client.post("/api/v1/webhooks/tradingview", json=payload)
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response1.json()["signal_id"] == response2.json()["signal_id"]
+    assert response2.json()["decision"] == "DUPLICATE"
 
 
 def test_webhook_duplicate_race_returns_duplicate_without_500(
