@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
@@ -16,7 +15,7 @@ class SignalRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def find_by_signal_id(self, signal_id: str) -> Optional[Signal]:
+    def find_by_signal_id(self, signal_id: str) -> Signal | None:
         """
         Tìm signal theo business signal_id (unique key từ TradingView payload).
         Dùng cho idempotency check — trước khi insert.
@@ -74,35 +73,6 @@ class SignalRepository:
         logger.info("signal_created", extra={"signal_id": signal.signal_id, "row_id": signal.id})
         return signal
 
-    def find_recent_same_side(
-        self,
-        symbol: str,
-        timeframe: str,
-        side: str,
-        since_minutes: int,
-        exclude_signal_id: str | None = None,
-    ) -> list[Signal]:
-        """
-        Tìm các signal cùng symbol, timeframe, side trong N phút gần đây.
-        Dùng cho COOLDOWN_ACTIVE check.
-        """
-        since = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
-        stmt = (
-            select(Signal)
-            .where(
-                and_(
-                    Signal.symbol == symbol,
-                    Signal.timeframe == timeframe,
-                    Signal.side == side,
-                    Signal.created_at >= since,
-                )
-            )
-            .order_by(Signal.created_at.desc())
-        )
-        if exclude_signal_id is not None:
-            stmt = stmt.where(Signal.signal_id != exclude_signal_id)
-        return list(self.db.execute(stmt).scalars().all())
-
     def find_recent_pass_main_same_side(
         self,
         symbol: str,
@@ -139,7 +109,7 @@ class SignalRepository:
         symbol: str,
         timeframe: str,
         side: str,
-        signal_type: Optional[str],
+        signal_type: str | None,
         since_minutes: int,
         price_tolerance_pct: float = 0.002,
         exclude_signal_id: str | None = None,

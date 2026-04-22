@@ -33,36 +33,6 @@ def base_signal_data() -> Dict[str, Any]:
         "raw_payload": "{}"
     }
 
-def test_find_recent_same_side(signal_repo: SignalRepository, db_session: Session, base_signal_data: Dict[str, Any]):
-    """
-    Test finding recent signals for EXACT same side inside timeframe cooldown.
-    """
-    # 1. Verify nothing exists
-    recent = signal_repo.find_recent_same_side("BTCUSDT", "5m", "LONG", 15)
-    assert len(recent) == 0
-
-    # 2. Insert a signal
-    signal_1 = signal_repo.create(base_signal_data)
-    
-    # Simulate DB insert implicitly sets created_at to NOW
-    recent = signal_repo.find_recent_same_side("BTCUSDT", "5m", "LONG", 15)
-    assert len(recent) == 1
-    assert recent[0].signal_id == "test-signal-id-1"
-
-    # 3. Exclude the current signal_id from checks (duplicate self-check behavior logic inside Filter Engine)
-    # The actual ignore logic is implemented in the filter engine (comparing IDs), but let's make sure the repo itself returns it.
-    
-    # 4. Check different side shouldn't match
-    recent_short = signal_repo.find_recent_same_side("BTCUSDT", "5m", "SHORT", 15)
-    assert len(recent_short) == 0
-    
-    # 5. Check old signals shouldn't match
-    signal_1.created_at = datetime.now(timezone.utc) - timedelta(minutes=20)
-    db_session.commit()
-    
-    recent_old = signal_repo.find_recent_same_side("BTCUSDT", "5m", "LONG", 15)
-    assert len(recent_old) == 0
-
 def test_find_recent_similar_price(signal_repo: SignalRepository, db_session: Session, base_signal_data: Dict[str, Any]):
     """
     Test Duplicate suppression (find_recent_similar).
