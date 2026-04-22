@@ -280,6 +280,7 @@ Bot nhận alert từ **TradingView indicator Bot Webhook v8.4 [BTC]**:
 - [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) — Schema PostgreSQL
 - [API_REFERENCE.md](./API_REFERENCE.md) — Endpoint reference
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — Hướng dẫn triển khai
+- [GITHUB_CICD.md](./docs/GITHUB_CICD.md) — GitHub Actions CI/CD
 - [QA_STRATEGY.md](./QA_STRATEGY.md) — Acceptance criteria + QA checklist
 - [TASKS.md](./TASKS.md) — Task breakdown cho AI agent
 - [PROMPTS.md](./PROMPTS.md) — 22 prompt theo lifecycle dự án

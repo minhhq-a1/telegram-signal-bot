@@ -10,6 +10,19 @@
 - Domain với HTTPS (bắt buộc cho webhook)
 - Telegram Bot Token (từ @BotFather)
 - TradingView account có indicator Bot Webhook v8.4 [BTC]
+- GitHub repository với GitHub Actions enabled nếu muốn dùng CI/CD tự động
+
+---
+
+## 1.1 GitHub CI/CD
+
+Repo hiện hỗ trợ GitHub Actions cho:
+- `CI`: chạy test + Docker build validation
+- `CD`: build/push image lên GHCR khi merge vào `main`
+- tùy chọn deploy Railway qua `RAILWAY_TOKEN` bằng Railway CLI
+
+Xem chi tiết tại:
+- [GITHUB_CICD.md](./GITHUB_CICD.md)
 
 ---
 
