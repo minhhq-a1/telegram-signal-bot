@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    container_name: signal_bot_app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.prod
+    environment:
+      - DATABASE_URL=postgresql+psycopg://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - APP_ENV=prod
+    depends_on:
+      db:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    container_name: signal_bot_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-signal_bot}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-signal_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_prod_data:

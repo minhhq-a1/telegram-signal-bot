@@ -499,11 +499,11 @@ TASK-001 (scaffold)
 
 ## Định nghĩa "Done" cho toàn dự án
 
-- [ ] `GET /api/v1/health` → 200
-- [ ] `POST /api/v1/webhooks/tradingview` với valid payload → 200 PASS_MAIN
-- [ ] Secret sai → 401
-- [ ] TF 30S → 400 UNSUPPORTED_TIMEFRAME
-- [ ] Duplicate signal_id → 200 DUPLICATE (không insert thêm)
-- [ ] Telegram message gửi thành công
-- [ ] Toàn bộ audit trail trong DB trace được
-- [ ] 8 test cases core trong TEST_CASES.md đều pass
+- [x] `GET /api/v1/health` → 200
+- [x] `POST /api/v1/webhooks/tradingview` với valid payload → 200 PASS_MAIN
+- [x] Secret sai → 401
+- [x] TF 30S → 400 UNSUPPORTED_TIMEFRAME
+- [x] Duplicate signal_id → 200 DUPLICATE (không insert thêm)
+- [x] Telegram message gửi thành công
+- [x] Toàn bộ audit trail trong DB trace được
+- [x] 8 test cases core trong TEST_CASES.md đều pass

@@ -87,7 +87,7 @@ def test_webhook_logs_invalid_json_before_rejecting(client, db_session):
 
 def test_webhook_logs_invalid_schema_before_rejecting(client, db_session, valid_payload):
     invalid_payload = dict(valid_payload)
-    invalid_payload.pop("signal_id")
+    invalid_payload.pop("price")
 
     response = client.post("/api/v1/webhooks/tradingview", json=invalid_payload)
 
