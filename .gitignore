@@ -37,3 +37,16 @@ postgres_data/
 # AI Agent Settings
 .antigravity/
 .cursor/
+
+# Database files (Integration tests)
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Python versioning
+.python-version
+
+# Temporary files
+*.tmp
