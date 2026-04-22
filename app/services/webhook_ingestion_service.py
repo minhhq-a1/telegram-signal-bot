@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 
 from app.core.enums import AuthStatus, DecisionType, DeliveryStatus, TelegramRoute
 from app.core.logging import logger
@@ -31,6 +32,14 @@ class WebhookServiceResult:
     status_code: int
     body: WebhookAcceptedResponse | ErrorResponse
     is_error: bool = False
+    notification_job: NotificationJob | None = None
+
+
+@dataclass
+class NotificationJob:
+    signal_row_id: str
+    route: str
+    message_text: str
 
 
 class WebhookIngestionService:
@@ -52,9 +61,15 @@ class WebhookIngestionService:
         self.signal_repo = signal_repo_cls(db)
         self.filter_repo = filter_repo_cls(db)
         self.decision_repo = decision_repo_cls(db)
+        self.telegram_repo_cls = telegram_repo_cls
         self.telegram_repo = telegram_repo_cls(db)
         self.config_repo = config_repo_cls(db)
         self.market_repo = market_event_repo_cls(db)
+        self.background_session_factory = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=db.get_bind(),
+        )
 
     async def ingest(self, raw_body_text: str, source_ip: str | None, headers: dict[str, Any]) -> WebhookServiceResult:
         payload_dict = self._parse_json(raw_body_text, source_ip, headers)
@@ -141,12 +156,9 @@ class WebhookIngestionService:
             }
         )
 
+        notification_job = self._build_notification_job(norm_data, signal_obj.id, filter_result, config)
         self.db.commit()
-
-        await self._notify_and_log(norm_data, signal_obj.id, filter_result, config)
-
-        self.db.commit()
-        return self._accepted_result(payload.signal_id, filter_result.final_decision)
+        return self._accepted_result(payload.signal_id, filter_result.final_decision, notification_job)
 
     def _parse_json(
         self,
@@ -212,7 +224,13 @@ class WebhookIngestionService:
                 ),
             )
 
-    async def _notify_and_log(self, norm_data: dict[str, Any], signal_row_id: str, filter_result: Any, config: dict[str, Any]) -> None:
+    def _build_notification_job(
+        self,
+        norm_data: dict[str, Any],
+        signal_row_id: str,
+        filter_result: Any,
+        config: dict[str, Any],
+    ) -> NotificationJob | None:
         msg_text = None
         route_to_send = None
 
@@ -229,36 +247,63 @@ class WebhookIngestionService:
             route_to_send = TelegramRoute.ADMIN
 
         if not msg_text or not route_to_send:
-            return
+            return None
 
-        route_value = route_to_send.value
-        status, response, error_detail = await self.notifier.notify(route_value, msg_text)
-        chat_id = self.notifier.resolve_chat_id(route_value) or "N/A"
-        status_value = status if isinstance(status, str) else status.value
-        sent_at = datetime.now(timezone.utc) if status_value == DeliveryStatus.SENT.value else None
-
-        telegram_message_id = None
-        if response:
-            telegram_message_id = str(
-                response.get("_telegram_message_id") or response.get("result", {}).get("message_id") or ""
-            )
-            if telegram_message_id == "":
-                telegram_message_id = None
-
-        self.telegram_repo.create(
-            {
-                "signal_row_id": signal_row_id,
-                "route": route_value,
-                "chat_id": str(chat_id),
-                "message_text": msg_text,
-                "telegram_message_id": telegram_message_id,
-                "delivery_status": status_value,
-                "error_log": error_detail,
-                "sent_at": sent_at,
-            }
+        return NotificationJob(
+            signal_row_id=signal_row_id,
+            route=route_to_send.value,
+            message_text=msg_text,
         )
 
-    def _accepted_result(self, signal_id: str, decision: DecisionType) -> WebhookServiceResult:
+    async def deliver_notification(self, notification_job: NotificationJob) -> None:
+        status, response, error_detail = await self.notifier.notify(
+            notification_job.route,
+            notification_job.message_text,
+        )
+
+        db = self.background_session_factory()
+        try:
+            telegram_repo = self.telegram_repo_cls(db)
+            chat_id = self.notifier.resolve_chat_id(notification_job.route) or "N/A"
+            status_value = status if isinstance(status, str) else status.value
+            sent_at = datetime.now(timezone.utc) if status_value == DeliveryStatus.SENT.value else None
+
+            telegram_message_id = None
+            if response:
+                telegram_message_id = str(
+                    response.get("_telegram_message_id") or response.get("result", {}).get("message_id") or ""
+                )
+                if telegram_message_id == "":
+                    telegram_message_id = None
+
+            telegram_repo.create(
+                {
+                    "signal_row_id": notification_job.signal_row_id,
+                    "route": notification_job.route,
+                    "chat_id": str(chat_id),
+                    "message_text": notification_job.message_text,
+                    "telegram_message_id": telegram_message_id,
+                    "delivery_status": status_value,
+                    "error_log": error_detail,
+                    "sent_at": sent_at,
+                }
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "telegram_delivery_log_failed",
+                extra={"signal_row_id": notification_job.signal_row_id, "route": notification_job.route},
+            )
+        finally:
+            db.close()
+
+    def _accepted_result(
+        self,
+        signal_id: str,
+        decision: DecisionType,
+        notification_job: NotificationJob | None = None,
+    ) -> WebhookServiceResult:
         return WebhookServiceResult(
             status_code=200,
             body=WebhookAcceptedResponse(
@@ -266,6 +311,7 @@ class WebhookIngestionService:
                 decision=decision,
                 timestamp=datetime.now(timezone.utc),
             ),
+            notification_job=notification_job,
         )
 
     def _error_result(self, status_code: int, error: ErrorResponse) -> WebhookServiceResult:
