@@ -10,6 +10,7 @@ def make_filter_engine(config_overrides=None):
         "rr_min_base": 1.5,
         "rr_min_squeeze": 2.0,
         "duplicate_price_tolerance_pct": 0.002,
+        "enable_news_block": True,
         "news_block_before_min": 15,
         "news_block_after_min": 30,
         # Không có main_score_threshold/warning_score_threshold
@@ -62,6 +63,7 @@ def test_reject_low_confidence():
     result = engine.run(make_signal(indicator_confidence=0.75))
     assert result.final_decision == "REJECT"
     assert result.route == "NONE"
+    assert result.decision_reason == "Business rule failed: MIN_CONFIDENCE_BY_TF"
     fail_rules = [r.rule_code for r in result.filter_results if r.result.value == "FAIL"]
     assert "MIN_CONFIDENCE_BY_TF" in fail_rules
 
@@ -79,6 +81,7 @@ def test_ranging_high_vol_routes_to_warning_not_reject():
     result = engine.run(make_signal(vol_regime="RANGING_HIGH_VOL"))
     assert result.final_decision == "PASS_WARNING"  # WARN MEDIUM → warning
     assert result.route == "WARN"
+    assert result.decision_reason == "Warnings triggered: VOLATILITY_WARNING"
     # server_score giảm vì -0.08 delta, nhưng không quyết định route
     warn_rules = [r.rule_code for r in result.filter_results if r.result.value == "WARN"]
     assert "VOLATILITY_WARNING" in warn_rules
@@ -132,6 +135,7 @@ def test_squeeze_building_stays_main():
     result = engine.run(make_signal(vol_regime="SQUEEZE_BUILDING"))
     assert result.final_decision == "PASS_MAIN"  # WARN LOW → vẫn MAIN
     assert result.route == "MAIN"
+    assert result.decision_reason == "Passed main route with advisory warnings: VOLATILITY_WARNING"
 
 # Test 10: server_score được tính đúng (analytics check)
 def test_server_score_calculated_for_analytics():
@@ -183,3 +187,22 @@ def test_duplicate_tolerance_does_not_reject_outside_0_2_percent_boundary():
         )
     )
     assert result.final_decision == "PASS_MAIN"
+
+
+def test_news_block_can_be_disabled_via_snake_case_config():
+    engine = make_filter_engine({"enable_news_block": False})
+    engine.market_event_repo.find_active_around.return_value = [MagicMock()]
+
+    result = engine.run(make_signal())
+
+    assert result.final_decision == "PASS_MAIN"
+    rule_codes = [r.rule_code for r in result.filter_results]
+    assert "NEWS_BLOCK" not in rule_codes
+
+
+def test_pass_main_without_warnings_has_clear_reason():
+    engine = make_filter_engine()
+
+    result = engine.run(make_signal())
+
+    assert result.decision_reason == "Passed all filters"

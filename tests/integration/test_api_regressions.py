@@ -207,6 +207,7 @@ def test_seeded_signal_bot_config_matches_v1_docs():
         "12m": 20,
         "15m": 25,
     }
+    assert seeded_config["enable_news_block"] is True
 
 
 def test_webhook_duplicate_returns_valid_duplicate_response(client, db_session, monkeypatch, valid_payload):

@@ -43,7 +43,7 @@ class SignalMetadata(BaseModel):
 
 class TradingViewWebhookPayload(BaseModel):
     # Core identifying fields
-    signal_id: str | None = Field(None, description="Unique ID from TradingView. If missing, bot will generate one.")
+    signal_id: str = Field(..., min_length=1, description="Unique ID from TradingView. Required for idempotency.")
     symbol: str = Field(..., min_length=1)
     timeframe: str = Field(..., min_length=1)
     source: str = Field(..., min_length=1)

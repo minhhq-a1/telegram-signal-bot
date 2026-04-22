@@ -149,6 +149,7 @@ VALUES (
     "rr_min_base": 1.5,
     "rr_min_squeeze": 2.0,
     "duplicate_price_tolerance_pct": 0.002,
+    "enable_news_block": true,
     "news_block_before_min": 15,
     "news_block_after_min": 30,
     "log_reject_to_admin": true

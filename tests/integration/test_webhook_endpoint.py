@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
+
+from app.domain.models import Signal, WebhookEvent
 
 def test_webhook_accepted_valid_payload(client: TestClient, valid_payload: dict):
     """
@@ -55,3 +58,81 @@ def test_webhook_unsupported_timeframe(client: TestClient, valid_payload: dict):
     # Unsupported timeframe is handled in filter/persist flow => HTTP 200 with REJECT decision.
     assert response.status_code == 200
     assert response.json()["decision"] == "REJECT"
+
+
+def test_webhook_missing_signal_id_returns_invalid_schema_with_audit_row(
+    client: TestClient,
+    db_session,
+    valid_payload: dict,
+):
+    payload = valid_payload.copy()
+    payload.pop("signal_id")
+
+    response = client.post("/api/v1/webhooks/tradingview", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == "INVALID_SCHEMA"
+
+    event = db_session.query(WebhookEvent).one()
+    assert event.is_valid_json is True
+    assert event.error_message is not None
+    assert "signal_id" in event.error_message
+
+
+def test_webhook_duplicate_race_returns_duplicate_without_500(
+    client: TestClient,
+    db_session,
+    monkeypatch,
+    valid_payload: dict,
+):
+    from app.api import webhook_controller
+
+    existing_signal = Signal(
+        id="existing-signal-row",
+        webhook_event_id=None,
+        signal_id=valid_payload["signal_id"],
+        source=valid_payload["source"],
+        symbol=valid_payload["symbol"],
+        timeframe=valid_payload["timeframe"],
+        side="LONG",
+        price=valid_payload["price"],
+        entry_price=valid_payload["metadata"]["entry"],
+        stop_loss=valid_payload["metadata"]["stop_loss"],
+        take_profit=valid_payload["metadata"]["take_profit"],
+        risk_reward=1.81,
+        indicator_confidence=valid_payload["confidence"],
+        raw_payload=valid_payload,
+    )
+    db_session.add(existing_signal)
+    db_session.commit()
+
+    lookup_counter = {"count": 0}
+
+    original_find = webhook_controller.SignalRepository.find_by_signal_id
+
+    def fake_find_by_signal_id(self, signal_id: str):
+        lookup_counter["count"] += 1
+        if lookup_counter["count"] == 1:
+            return None
+        return original_find(self, signal_id)
+
+    def fake_create(self, data: dict):
+        raise IntegrityError(
+            "INSERT INTO signals ...",
+            {},
+            Exception("UNIQUE constraint failed: signals.signal_id"),
+        )
+
+    async def fail_if_called(self, route: str, text: str):
+        raise AssertionError("Telegram notify must not run for duplicate race")
+
+    monkeypatch.setattr(webhook_controller.SignalRepository, "find_by_signal_id", fake_find_by_signal_id)
+    monkeypatch.setattr(webhook_controller.SignalRepository, "create", fake_create)
+    monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fail_if_called)
+
+    response = client.post("/api/v1/webhooks/tradingview", json=valid_payload)
+
+    assert response.status_code == 200
+    assert response.json()["decision"] == "DUPLICATE"
+    assert db_session.query(Signal).count() == 1
+    assert db_session.query(WebhookEvent).count() == 1

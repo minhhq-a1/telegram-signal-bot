@@ -81,12 +81,13 @@ class FilterEngine:
         score = max(0.0, min(1.0, score))
 
         decision, route = self._decide(results)
+        decision_reason = self._build_decision_reason(reason, results, decision)
         
         return FilterExecutionResult(
             filter_results=results,
             server_score=round(score, 4),
             final_decision=decision,
-            decision_reason=reason,
+            decision_reason=decision_reason,
             route=route,
         )
 
@@ -106,6 +107,35 @@ class FilterEngine:
 
     def _has_fail(self, results: list[FilterResult]) -> bool:
         return any(r.result == RuleResult.FAIL for r in results)
+
+    def _build_decision_reason(
+        self,
+        phase_reason: str,
+        results: list[FilterResult],
+        decision: DecisionType,
+    ) -> str:
+        fail_codes = [r.rule_code for r in results if r.result == RuleResult.FAIL]
+        medium_plus_warn_codes = [
+            r.rule_code
+            for r in results
+            if r.result == RuleResult.WARN and r.severity in (RuleSeverity.MEDIUM, RuleSeverity.HIGH)
+        ]
+        low_warn_codes = [
+            r.rule_code
+            for r in results
+            if r.result == RuleResult.WARN and r.severity == RuleSeverity.LOW
+        ]
+
+        if decision == DecisionType.REJECT:
+            return f"{phase_reason}: {', '.join(fail_codes)}"
+
+        if decision == DecisionType.PASS_WARNING:
+            return f"Warnings triggered: {', '.join(medium_plus_warn_codes)}"
+
+        if low_warn_codes:
+            return f"Passed main route with advisory warnings: {', '.join(low_warn_codes)}"
+
+        return "Passed all filters"
 
     # ---------------------------------------------------------
     # Rule implementations
@@ -233,12 +263,12 @@ class FilterEngine:
              results.append(FilterResult("DUPLICATE_SUPPRESSION", "trading", RuleResult.PASS, RuleSeverity.INFO))
 
     def _check_news_block(self, signal: dict, results: list[FilterResult]):
-        if not self.config.get("ENABLE_NEWS_BLOCK", True):
-             return
+        if not self.config.get("enable_news_block", True):
+            return
              
         db_time = datetime.now(timezone.utc)
         if signal.get("payload_timestamp"):
-             db_time = signal["payload_timestamp"]
+            db_time = signal["payload_timestamp"]
              
         before_min = self.config.get("news_block_before_min", 15)
         after_min = self.config.get("news_block_after_min", 30)

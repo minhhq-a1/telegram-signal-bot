@@ -119,6 +119,11 @@ Xem [PAYLOAD_CONTRACT.md](./PAYLOAD_CONTRACT.md) để biết đầy đủ.
 }
 ```
 
+Ví dụ các case thuộc `INVALID_SCHEMA`:
+- thiếu `signal_id`
+- `signal_id` là chuỗi rỗng
+- thiếu `metadata.entry`, `metadata.stop_loss`, hoặc `metadata.take_profit`
+
 **Lưu ý về error responses hiện tại:**
 
 | Case | HTTP | Runtime behavior |
@@ -177,7 +182,7 @@ Xem [PAYLOAD_CONTRACT.md](./PAYLOAD_CONTRACT.md) để biết đầy đủ.
   },
   "decision": {
     "decision": "PASS_MAIN",
-    "decision_reason": "Passed all main filters",
+    "decision_reason": "Passed all filters",
     "telegram_route": "MAIN",
     "created_at": "2026-04-18T15:30:02Z"
   },
