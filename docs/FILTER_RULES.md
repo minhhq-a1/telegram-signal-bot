@@ -80,8 +80,8 @@ On FAIL:  REJECT — return 400 UNSUPPORTED_SYMBOL
 ### TIMEFRAME_ALLOWED
 ```
 Rule:     timeframe ∈ config.allowed_timeframes
-          V1 whitelist: ["1m", "3m", "5m", "12m", "15m"]
-          Rejected: 30S, 45S, 2m, 4m, 6m–11m, 13m–20m
+          V1 whitelist: ["1m", "3m", "5m", "12m", "15m", "30m", "1h"]
+          Rejected: 30S, 45S, 2m, 4m, 6m–11m, 13m–20m, 4h, 1d
 Severity: CRITICAL
 On FAIL:  REJECT (runtime response currently `200` with `decision="REJECT"` via filter/persist flow)
 Lý do:   TF quá thấp → nhiều noise; 4m → thiếu dữ liệu train; TF lẻ → khó vận hành
@@ -151,6 +151,8 @@ Ngưỡng tối thiểu theo timeframe:
     5m:  >= 0.78
     12m: >= 0.76
     15m: >= 0.74
+    30m: >= 0.72
+    1h:  >= 0.70
 
 Severity: HIGH
 On FAIL:  REJECT
@@ -224,6 +226,8 @@ Cooldown windows:
     5m:  10 phút
     12m: 20 phút
     15m: 25 phút
+    30m: 45 phút
+    1h:  90 phút
 
 Severity: HIGH
 On FAIL:  REJECT
@@ -431,20 +435,24 @@ ROUTE_REJECT
 ```json
 {
   "allowed_symbols": ["BTCUSDT", "BTCUSD"],
-  "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m"],
+  "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m", "30m", "1h"],
   "confidence_thresholds": {
     "1m": 0.82,
     "3m": 0.80,
     "5m": 0.78,
     "12m": 0.76,
-    "15m": 0.74
+    "15m": 0.74,
+    "30m": 0.72,
+    "1h": 0.70
   },
   "cooldown_minutes": {
     "1m": 5,
     "3m": 8,
     "5m": 10,
     "12m": 20,
-    "15m": 25
+    "15m": 25,
+    "30m": 45,
+    "1h": 90
   },
   "rr_min_base": 1.5,
   "rr_min_squeeze": 2.0,

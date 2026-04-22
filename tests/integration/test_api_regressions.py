@@ -21,9 +21,9 @@ def test_webhook_pass_main_logs_telegram_delivery(client, db_session, monkeypatc
         "get_signal_bot_config",
         lambda self: {
             "allowed_symbols": ["BTCUSDT", "BTCUSD"],
-            "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m"],
-            "confidence_thresholds": {"1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74},
-            "cooldown_minutes": {"1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25},
+            "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m", "30m", "1h"],
+            "confidence_thresholds": {"1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74, "30m": 0.72, "1h": 0.70},
+            "cooldown_minutes": {"1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25, "30m": 45, "1h": 90},
             "rr_min_base": 1.5,
             "rr_min_squeeze": 2.0,
             "duplicate_price_tolerance_pct": 0.002,
@@ -192,13 +192,15 @@ def test_seeded_signal_bot_config_matches_v1_docs():
     seeded_config = json.loads(match.group(1))
 
     assert seeded_config["allowed_symbols"] == ["BTCUSDT", "BTCUSD"]
-    assert seeded_config["allowed_timeframes"] == ["1m", "3m", "5m", "12m", "15m"]
+    assert seeded_config["allowed_timeframes"] == ["1m", "3m", "5m", "12m", "15m", "30m", "1h"]
     assert seeded_config["confidence_thresholds"] == {
         "1m": 0.82,
         "3m": 0.80,
         "5m": 0.78,
         "12m": 0.76,
         "15m": 0.74,
+        "30m": 0.72,
+        "1h": 0.70,
     }
     assert seeded_config["cooldown_minutes"] == {
         "1m": 5,
@@ -206,6 +208,8 @@ def test_seeded_signal_bot_config_matches_v1_docs():
         "5m": 10,
         "12m": 20,
         "15m": 25,
+        "30m": 45,
+        "1h": 90,
     }
     assert seeded_config["enable_news_block"] is True
 
@@ -294,9 +298,9 @@ def test_cooldown_only_applies_to_prior_pass_main(
         "get_signal_bot_config",
         lambda self: {
             "allowed_symbols": ["BTCUSDT", "BTCUSD"],
-            "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m"],
-            "confidence_thresholds": {"1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74},
-            "cooldown_minutes": {"1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25},
+            "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m", "30m", "1h"],
+            "confidence_thresholds": {"1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74, "30m": 0.72, "1h": 0.70},
+            "cooldown_minutes": {"1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25, "30m": 45, "1h": 90},
             "rr_min_base": 1.5,
             "rr_min_squeeze": 2.0,
             "duplicate_price_tolerance_pct": 0.002,
@@ -383,9 +387,9 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
         "get_signal_bot_config",
         lambda self: {
             "allowed_symbols": ["BTCUSDT", "BTCUSD"],
-            "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m"],
-            "confidence_thresholds": {"1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74},
-            "cooldown_minutes": {"1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25},
+            "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m", "30m", "1h"],
+            "confidence_thresholds": {"1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74, "30m": 0.72, "1h": 0.70},
+            "cooldown_minutes": {"1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25, "30m": 45, "1h": 90},
             "rr_min_base": 1.5,
             "rr_min_squeeze": 2.0,
             "duplicate_price_tolerance_pct": 0.002,

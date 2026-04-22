@@ -149,7 +149,7 @@ class FilterEngine:
             results.append(FilterResult("SYMBOL_ALLOWED", "validation", RuleResult.PASS, RuleSeverity.INFO))
 
     def _check_timeframe(self, signal: dict, results: list[FilterResult]):
-        allowed = self.config.get("allowed_timeframes", ["1m", "3m", "5m", "12m", "15m"])
+        allowed = self.config.get("allowed_timeframes", ["1m", "3m", "5m", "12m", "15m", "30m", "1h"])
         if signal["timeframe"] not in allowed:
             results.append(FilterResult("TIMEFRAME_ALLOWED", "validation", RuleResult.FAIL, RuleSeverity.CRITICAL, 0.0, {"allowed": allowed}))
         else:
@@ -212,7 +212,7 @@ class FilterEngine:
         tf = signal.get("timeframe")
         conf = signal.get("indicator_confidence", 0)
         thresholds = self.config.get("confidence_thresholds", {
-            "1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74
+            "1m": 0.82, "3m": 0.80, "5m": 0.78, "12m": 0.76, "15m": 0.74, "30m": 0.72, "1h": 0.70
         })
         threshold = thresholds.get(tf, 0.85)
 
@@ -235,7 +235,7 @@ class FilterEngine:
     def _check_duplicate(self, signal: dict, results: list[FilterResult]):
         tf = signal.get("timeframe")
         cooldowns = self.config.get("cooldown_minutes", {
-            "1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25
+            "1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25, "30m": 45, "1h": 90
         })
         minutes = cooldowns.get(tf, 10)
         tolerance = self.config.get("duplicate_price_tolerance_pct", 0.002)
@@ -306,7 +306,7 @@ class FilterEngine:
         """
         tf = signal.get("timeframe")
         cooldowns = self.config.get("cooldown_minutes", {
-            "1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25
+            "1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25, "30m": 45, "1h": 90
         })
         minutes = cooldowns.get(tf, 10)
         
