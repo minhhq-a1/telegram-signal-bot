@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hmac
 import os
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
@@ -28,14 +29,13 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/dashboard", include_in_schema=False)
-async def dashboard_redirect(request: Request, token: str | None = None):
+async def dashboard_redirect(request: Request):
     """Serve dashboard với optional token auth."""
     if settings.dashboard_token:
         auth_header = request.headers.get("Authorization", "")
-        bearer_token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else None
-        provided = token or bearer_token
-        if provided != settings.dashboard_token:
-            raise HTTPException(status_code=401, detail="Unauthorized")
+        bearer_token = (auth_header.removeprefix("Bearer ").strip() or None) if auth_header.startswith("Bearer ") else None
+        if not bearer_token or not hmac.compare_digest(bearer_token, settings.dashboard_token):
+            raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
     return RedirectResponse(url="/static/dashboard.html")
 
 
