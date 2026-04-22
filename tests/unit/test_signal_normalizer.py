@@ -57,3 +57,18 @@ def test_normalize_rr_none_when_risk_zero():
     payload = TradingViewWebhookPayload(**payload_data)
     normalized = SignalNormalizer.normalize("evt-123", payload)
     assert normalized["risk_reward"] is None
+
+
+def test_payload_generates_signal_id_when_missing():
+    payload_data = make_payload()
+    payload_data.pop("signal_id")
+
+    payload = TradingViewWebhookPayload(**payload_data)
+
+    assert payload.signal_id is not None
+    assert payload.signal_id.startswith("tv-btcusdt-5m-2026-04-18T15:30:00Z-long-")
+
+
+def test_payload_normalizes_tradingview_native_minute_timeframe():
+    payload = TradingViewWebhookPayload(**make_payload(timeframe="60"))
+    assert payload.timeframe == "1h"

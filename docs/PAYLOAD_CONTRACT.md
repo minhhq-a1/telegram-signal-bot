@@ -17,7 +17,6 @@ Bot nhận tại `POST /api/v1/webhooks/tradingview`.
 {
   "payload_version": "v1",
   "secret": "YOUR_SHARED_SECRET",
-  "signal_id": "tv-btcusdt-5m-1713452400000-long-LONG_V73",
   "signal": "long",
   "symbol": "BTCUSDT",
   "chart_symbol": "BTCUSD",
@@ -63,10 +62,9 @@ Bot nhận tại `POST /api/v1/webhooks/tradingview`.
 | Field | Type | Mô tả |
 |---|---|---|
 | `secret` | string | Shared secret để xác thực. Phải khớp `TRADINGVIEW_SHARED_SECRET` |
-| `signal_id` | string | Unique ID của signal. Format: `tv-{symbol}-{tf}-{bar_time_ms}-{side}-{signal_type}` |
 | `signal` | enum | `"long"` hoặc `"short"` |
 | `symbol` | string | Symbol backend dùng để trade. VD: `"BTCUSDT"` |
-| `timeframe` | string | Timeframe hiện tại. VD: `"5m"`, `"15m"` |
+| `timeframe` | string | Timeframe hiện tại. Chấp nhận cả format TradingView native như `"3"`, `"60"`, `"1D"`, `"30S"` và format nội bộ như `"3m"`, `"1h"` |
 | `timestamp` | ISO-8601 | Thời điểm alert được gửi (UTC) |
 | `price` | float | Giá đóng cửa của bar |
 | `source` | string | Tên indicator. VD: `"Bot_Webhook_v84"` |
@@ -82,6 +80,7 @@ Bot nhận tại `POST /api/v1/webhooks/tradingview`.
 | Field | Type | Mô tả |
 |---|---|---|
 | `payload_version` | string | `"v1"` — versioning cho backward compat |
+| `signal_id` | string | Idempotency key. Có thể gửi sẵn; nếu thiếu thì server sẽ tự generate deterministic từ payload |
 | `chart_symbol` | string | Symbol trên chart TradingView. VD: `"BTCUSD"` |
 | `exchange` | string | Exchange trên chart. VD: `"KRAKEN"`, `"BINANCE"` |
 | `market_type` | enum | `"spot"` / `"perp"` / `"futures"` |
@@ -172,11 +171,17 @@ Allowed timeframes: 1m, 3m, 5m, 12m, 15m
 ```
 > TF 30S, 45S, 2m, 4m, 6m–11m, 13m–20m bị reject bởi server (quá nhiều noise hoặc thiếu dữ liệu)
 
+Ví dụ normalize từ TradingView native:
+- `3` → `3m`
+- `60` → `1h`
+- `1D` → `1d`
+- `30S` → `30s`
+
 ---
 
 ## 7. Format signal_id
 
-Format chuẩn được generate bởi Pine Script:
+Format chuẩn có thể được generate bởi Pine Script hoặc bởi server nếu client không gửi `signal_id`:
 
 ```
 tv-{symbol_lower}-{timeframe}-{bar_time_unix_ms}-{side_lower}-{signal_type_lower}
@@ -188,9 +193,22 @@ tv-btcusdt-5m-1713452400000-long-long_v73
 tv-btcusdt-3m-1713452280000-short-short_squeeze
 ```
 
-`signal_id` là **required** trong V1 production contract.
-Bot không tự generate fallback ở server side, để tránh gộp nhầm hai signal hợp lệ thành một
-idempotency key.
+`signal_id` là idempotency key của hệ thống.
+
+Client **có thể gửi sẵn** `signal_id`, nhưng nếu thiếu thì server sẽ tự generate một giá trị deterministic từ:
+- `symbol`
+- `timeframe` sau khi normalize
+- `bar_time` hoặc `timestamp`
+- `signal`
+- `metadata.entry`
+- `metadata.stop_loss`
+- `metadata.take_profit`
+- `metadata.signal_type`
+
+Thiết kế này giúp:
+- duplicate cùng business event vẫn nhận ra được
+- không còn phụ thuộc việc TradingView phải tự ghép `signal_id`
+- tránh fallback yếu chỉ dựa trên `price`
 
 ---
 
@@ -212,7 +230,7 @@ idempotency key.
 ```json
 { "status": "rejected", "error_code": "INVALID_SECRET",      "message": "Webhook authentication failed" }
 { "status": "rejected", "error_code": "INVALID_JSON",        "message": "Request body is not valid JSON" }
-{ "status": "rejected", "error_code": "INVALID_SCHEMA",      "message": "Missing required field: signal_id" }
+{ "status": "rejected", "error_code": "INVALID_SCHEMA",      "message": "Request body does not match webhook schema" }
 { "status": "rejected", "error_code": "UNSUPPORTED_SYMBOL",  "message": "Symbol ETHUSDT not in whitelist" }
 { "status": "rejected", "error_code": "UNSUPPORTED_TIMEFRAME","message": "Timeframe 30S not allowed in V1" }
 { "status": "rejected", "error_code": "INVALID_SIGNAL_VALUES","message": "Direction check failed: SL >= entry for LONG" }
