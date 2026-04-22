@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     app_name: str = "Telegram Signal Bot"
     app_version: str = "1.0.0"
     app_env: str = "dev"
-    app_port: int = 8080
+    app_port: int = 8080  # Railway overrides via PORT env var in start.sh
     log_level: str = "INFO"
 
     # Security

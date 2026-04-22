@@ -83,7 +83,7 @@ Rule:     timeframe ∈ config.allowed_timeframes
           V1 whitelist: ["1m", "3m", "5m", "12m", "15m"]
           Rejected: 30S, 45S, 2m, 4m, 6m–11m, 13m–20m
 Severity: CRITICAL
-On FAIL:  REJECT — return 400 UNSUPPORTED_TIMEFRAME
+On FAIL:  REJECT (runtime response currently `200` with `decision="REJECT"` via filter/persist flow)
 Lý do:   TF quá thấp → nhiều noise; 4m → thiếu dữ liệu train; TF lẻ → khó vận hành
 ```
 

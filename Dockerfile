@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Set PORT default (Railway will override this)
+ENV PORT=8080
+
 WORKDIR /app
 
 # Install system dependencies
@@ -15,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port and start app
+# Make start script executable
+RUN chmod +x start.sh
+
+# Expose port (Railway overrides via PORT env var)
 EXPOSE 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["/bin/bash", "start.sh"]

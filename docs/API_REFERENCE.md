@@ -134,7 +134,9 @@ Xem [PAYLOAD_CONTRACT.md](./PAYLOAD_CONTRACT.md) để biết đầy đủ.
 
 ```json
 {
-  "detail": "Invalid secret"
+  "status": "rejected",
+  "error_code": "INVALID_SECRET",
+  "message": "Webhook authentication failed"
 }
 ```
 

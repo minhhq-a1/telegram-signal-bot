@@ -44,22 +44,14 @@ def test_webhook_idempotency_duplicate_signal(client: TestClient, valid_payload:
 
 def test_webhook_unsupported_timeframe(client: TestClient, valid_payload: dict):
     """
-    Test case: Invalid timeframe should be rejected structurally (if enforced by filter)
+    Test case: Unsupported timeframe must be rejected by filter routing.
     """
     payload = valid_payload.copy()
     payload["timeframe"] = "30S"
-    # Adjust signal ID to avoid DUPLICATE hit from previous test
     payload["signal_id"] = "tv-btcusdt-30s-special"
-    
+
     response = client.post("/api/v1/webhooks/tradingview", json=payload)
-    
-    # 30S is actually supported in the v8.4 logic, so let's check a dummy timeframe
-    payload["timeframe"] = "99m"
-    payload["signal_id"] = "tv-btcusdt-99m-special"
-    
-    response2 = client.post("/api/v1/webhooks/tradingview", json=payload)
-    
-    # Just asserting it goes through the controller (since timeframe support is evaluated inside FilterEngine)
-    # The actual HTTP status might be 200 with Decision=REJECT (due to filter engine)
-    assert response2.status_code == 200
-    assert response2.json()["decision"] in ["REJECT", "PASS_MAIN", "PASS_WARNING"]
+
+    # Unsupported timeframe is handled in filter/persist flow => HTTP 200 with REJECT decision.
+    assert response.status_code == 200
+    assert response.json()["decision"] == "REJECT"

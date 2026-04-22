@@ -70,8 +70,8 @@ response.json() == {
     "decision": "PASS_MAIN"
 }
 # DB assertions:
-db.query(Signal).filter_by(signal_id="tv-btcusdt-5m-...").count() == 1
-db.query(SignalDecision).filter_by(decision="PASS_MAIN").count() == 1
+assert len(db.execute(select(Signal).where(Signal.signal_id == "tv-btcusdt-5m-...")).scalars().all()) == 1
+assert len(db.execute(select(SignalDecision).where(SignalDecision.decision == "PASS_MAIN")).scalars().all()) == 1
 ```
 
 ---
@@ -94,7 +94,7 @@ response.json()["error_code"] == "INVALID_SECRET"
 
 ---
 
-## TC-003: Timeframe 30S → 400 UNSUPPORTED_TIMEFRAME
+## TC-003: Timeframe 30S → REJECT trong filter flow
 
 **Input:**
 ```python
@@ -103,8 +103,8 @@ payload = make_payload(timeframe="30S")
 
 **Expected:**
 ```python
-response.status_code == 400
-response.json()["error_code"] == "UNSUPPORTED_TIMEFRAME"
+response.status_code == 200
+response.json()["decision"] == "REJECT"
 ```
 
 **Cũng test các TF bị reject khác:** `45S`, `2m`, `4m`, `6m`, `11m`, `13m`, `20m`

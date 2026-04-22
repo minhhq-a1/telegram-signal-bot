@@ -17,7 +17,7 @@ Kết quả verify gần nhất:
 ./.venv/bin/python -m pytest -q
 ```
 
-- `31 passed`
+- `37 passed`
 - không còn regression fail đã biết
 - warning `pytest-asyncio` đã được dập bằng `pytest.ini`
 
@@ -52,12 +52,15 @@ tests/
 │   └── test_message_renderer.py
 └── integration/
     ├── conftest.py
-    └── test_api_regressions.py
+    ├── test_api_regressions.py
+    ├── test_webhook_endpoint.py
+    └── test_signal_repository.py
 ```
 
 Ghi chú:
 - `tests/integration/test_api_regressions.py` hiện là entrypoint integration chính
-- các file như `test_webhook_endpoint.py`, `test_audit_trail.py`, `test_failure_handling.py`, `test_news_block.py` là target structure cũ, không còn phản ánh layout thật
+- `test_webhook_endpoint.py` và `test_signal_repository.py` là integration bổ sung đang active trong repo
+- các file như `test_audit_trail.py`, `test_failure_handling.py`, `test_news_block.py` vẫn là target structure cũ, chưa tách thành file riêng
 
 ## 4. Acceptance Criteria — Go/No-Go
 
