@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.domain.schemas import WebhookAcceptedResponse
+from app.domain.schemas import WebhookAcceptedResponse, ErrorResponse
 from app.repositories.webhook_event_repo import WebhookEventRepository
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.filter_result_repo import FilterResultRepository
@@ -16,7 +16,15 @@ from app.services.webhook_ingestion_service import WebhookIngestionService
 
 router = APIRouter(tags=["webhooks"])
 
-@router.post("/api/v1/webhooks/tradingview", response_model=WebhookAcceptedResponse)
+@router.post(
+    "/api/v1/webhooks/tradingview",
+    responses={
+        200: {"model": WebhookAcceptedResponse, "description": "Signal accepted and processed"},
+        400: {"model": ErrorResponse, "description": "Invalid JSON, schema validation error, or invalid secret"},
+        409: {"model": ErrorResponse, "description": "Duplicate signal (already processed)"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
 async def handle_tradingview_webhook(
     request: Request,
     db: Session = Depends(get_db),
