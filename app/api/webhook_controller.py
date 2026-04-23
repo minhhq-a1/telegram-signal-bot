@@ -48,10 +48,7 @@ async def handle_tradingview_webhook(
     )
     result = await service.ingest(
         raw_body_text=raw_body_text,
-        source_ip=(
-            request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-            or (request.client.host if request.client else None)
-        ),
+        source_ip=request.client.host if request.client else None,
         headers=dict(request.headers),
     )
 

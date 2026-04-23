@@ -174,14 +174,18 @@ def test_webhook_duplicate_race_returns_duplicate_without_500(
     assert db_session.query(WebhookEvent).count() == 1
 
 
-def test_source_ip_uses_x_forwarded_for(client, db_session, valid_payload):
-    """source_ip should use the leftmost IP from X-Forwarded-For when present."""
+def test_source_ip_ignores_spoofed_x_forwarded_for(client, db_session, valid_payload):
+    """source_ip must use uvicorn-resolved request.client.host, not raw X-Forwarded-For.
+    A client supplying its own X-Forwarded-For header must not poison source_ip.
+    """
     from sqlalchemy import select
     from app.domain.models import WebhookEvent
     client.post(
         "/api/v1/webhooks/tradingview",
         json=valid_payload,
-        headers={"X-Forwarded-For": "203.0.113.5, 10.0.0.1"},
+        headers={"X-Forwarded-For": "1.3.3.7, 10.0.0.1"},
     )
     event = db_session.execute(select(WebhookEvent)).scalars().first()
-    assert event.source_ip == "203.0.113.5"
+    # TestClient connects from 127.0.0.1 (testclient) — uvicorn resolves client.host
+    # to that, ignoring the spoofed X-Forwarded-For. Must NOT be 1.3.3.7.
+    assert event.source_ip != "1.3.3.7"

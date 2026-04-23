@@ -1,10 +1,6 @@
-"""T2: Proxy-aware IP extraction logic."""
-
-def test_xff_single_ip():
-    assert "1.2.3.4".split(",")[0].strip() == "1.2.3.4"
-
-def test_xff_comma_list_takes_leftmost():
-    assert "1.2.3.4, 10.0.0.1, 172.16.0.1".split(",")[0].strip() == "1.2.3.4"
-
-def test_xff_empty_falls_back_to_none():
-    assert ("".split(",")[0].strip() or None) is None
+"""T2: Proxy IP handling — uvicorn resolves request.client.host from trusted headers.
+Source IP is read from request.client.host only; raw X-Forwarded-For is never parsed
+directly so a client cannot poison webhook_events.source_ip via header injection.
+The integration test test_source_ip_ignores_spoofed_x_forwarded_for in
+tests/integration/test_webhook_endpoint.py covers the end-to-end behaviour.
+"""
