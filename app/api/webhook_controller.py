@@ -27,7 +27,7 @@ router = APIRouter(tags=["webhooks"])
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )
-@limiter.limit(f"{settings.webhook_rate_limit}/minute")
+@limiter.limit(lambda: f"{settings.webhook_rate_limit}/minute")
 async def handle_tradingview_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
