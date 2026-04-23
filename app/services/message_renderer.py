@@ -3,6 +3,8 @@ from typing import Optional
 from datetime import datetime, timezone, timedelta
 
 class MessageRenderer:
+    _FOOTER = "Powered by Telegram Signal Bot V1"
+
     @staticmethod
     def _format_number(num) -> str:
         """Format price với 2 decimals và thousand separator."""
@@ -31,6 +33,10 @@ class MessageRenderer:
             ict_dt = dt + timedelta(hours=7)
             return ict_dt.strftime("%H:%M ICT")
         return "N/A"
+
+    @staticmethod
+    def _append_footer(text: str) -> str:
+        return f"{text}\n\n{MessageRenderer._FOOTER}"
 
     @staticmethod
     def render_main(signal: dict, score: float) -> str:
@@ -66,7 +72,7 @@ class MessageRenderer:
         time_str = MessageRenderer._get_time_str(signal)
         source = signal.get("source", "N/A")
 
-        return f"""{icon} {symbol} {side} | {tf}
+        return MessageRenderer._append_footer(f"""{icon} {symbol} {side} | {tf}
 Entry: {entry}
 SL: {sl}
 TP: {tp}
@@ -83,7 +89,7 @@ ATR%: {atr_str}
 
 Status: PASSED ✅
 Time: {time_str}
-Source: {source}"""
+Source: {source}""")
 
     @staticmethod
     def render_warning(signal: dict, score: float, reason: str) -> str:
@@ -100,13 +106,13 @@ Source: {source}"""
         trend = signal.get("regime", "N/A") or "N/A"
         vol = signal.get("vol_regime", "N/A") or "N/A"
 
-        return f"""🟡 WARNING | {symbol} {side} | {tf}
+        return MessageRenderer._append_footer(f"""🟡 WARNING | {symbol} {side} | {tf}
 Reason: {reason}
 Conf: {conf} | Score: {score_str}
 RR: {rr_str}
 Trend: {trend}
 Vol: {vol}
-Signal ID: {signal_id}"""
+Signal ID: {signal_id}""")
 
     @staticmethod
     def render_reject_admin(signal: dict, reason: str) -> str:
@@ -115,6 +121,6 @@ Signal ID: {signal_id}"""
         tf = signal.get("timeframe", "UNKNOWN")
         signal_id = signal.get("signal_id", "UNKNOWN")
 
-        return f"""⛔ REJECTED | {symbol} {side} | {tf}
+        return MessageRenderer._append_footer(f"""⛔ REJECTED | {symbol} {side} | {tf}
 Reason: {reason}
-Signal ID: {signal_id}"""
+Signal ID: {signal_id}""")
