@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Dashboard
     dashboard_token: str | None = None
 
+    # Webhook Rate Limiting
+    webhook_rate_limit: int = 50
+
     model_config = SettingsConfigDict(
         env_file=".env", 
         env_file_encoding="utf-8",
