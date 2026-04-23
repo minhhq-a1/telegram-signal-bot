@@ -60,3 +60,68 @@ def test_render_reject_admin_appends_footer():
 
     assert "REJECTED" in text
     assert "Powered by Telegram Signal Bot V1" in text
+
+
+def test_render_warning_contains_key_info():
+    signal = {
+        "side": "SHORT",
+        "symbol": "ETHUSDT",
+        "timeframe": "15m",
+        "signal_id": "warn-signal-001",
+        "risk_reward": 1.6,
+        "indicator_confidence": 0.74,
+        "regime": "RANGING",
+        "vol_regime": "HIGH_VOL",
+    }
+    text = MessageRenderer.render_warning(signal, 0.71, "Low confidence")
+    assert "ETHUSDT" in text
+    assert "SHORT" in text
+    assert "15m" in text
+    assert "Low confidence" in text
+    assert "74%" in text   # confidence
+    assert "71%" in text   # score
+    assert "warn-signal-001" in text
+
+
+def test_render_warning_no_entry_sl_tp_block():
+    signal = {
+        "side": "LONG",
+        "symbol": "BTCUSDT",
+        "timeframe": "5m",
+        "signal_id": "warn-signal-002",
+        "risk_reward": None,
+        "indicator_confidence": 0.70,
+        "regime": None,
+        "vol_regime": None,
+    }
+    text = MessageRenderer.render_warning(signal, 0.65, "Weak trend")
+    assert "Entry:" not in text
+    assert "SL:" not in text
+    assert "TP:" not in text
+
+
+def test_render_reject_admin_contains_key_info():
+    signal = {
+        "side": "LONG",
+        "symbol": "SOLUSDT",
+        "timeframe": "1h",
+        "signal_id": "reject-signal-001",
+    }
+    text = MessageRenderer.render_reject_admin(signal, "Below confidence threshold")
+    assert "SOLUSDT" in text
+    assert "LONG" in text
+    assert "1h" in text
+    assert "Below confidence threshold" in text
+    assert "reject-signal-001" in text
+
+
+def test_render_reject_admin_has_no_confidence_or_score():
+    signal = {
+        "side": "SHORT",
+        "symbol": "BTCUSDT",
+        "timeframe": "5m",
+        "signal_id": "reject-signal-002",
+    }
+    text = MessageRenderer.render_reject_admin(signal, "Cooldown active")
+    assert "Conf:" not in text
+    assert "Score:" not in text
