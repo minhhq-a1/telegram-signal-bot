@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, case, cast, Date
+from sqlalchemy import select, func, case, cast, Date, text
 
 from app.core.database import get_db
 from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
@@ -228,7 +228,7 @@ def get_daily_breakdown(
 
     stmt = (
         select(
-            cast(Signal.created_at, Date).label("day"),
+            func.date(Signal.created_at).label("day"),
             SignalDecision.decision,
             func.count(Signal.id).label("cnt"),
         )
@@ -243,7 +243,8 @@ def get_daily_breakdown(
     # Transform into {date: {decision: count}}
     daily: dict[str, dict] = {}
     for r in rows:
-        day_str = str(r.day)
+        # r.day is already a string in ISO format from func.date()
+        day_str = str(r.day) if r.day else "unknown"
         if day_str not in daily:
             daily[day_str] = {"PASS_MAIN": 0, "PASS_WARNING": 0, "REJECT": 0, "DUPLICATE": 0}
         if r.decision:
