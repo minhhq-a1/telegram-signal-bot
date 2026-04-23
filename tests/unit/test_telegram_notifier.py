@@ -104,3 +104,49 @@ async def test_send_message_retries_on_http_status_error():
         result = await notifier.send_message("chat-123", "hello")
 
     assert result["result"]["message_id"] == 7
+
+
+async def test_notify_route_none_returns_skipped():
+    notifier = TelegramNotifier()
+    status, resp, err = await notifier.notify("NONE", "any text")
+    assert status == "SKIPPED"
+    assert resp is None
+    assert err is None
+
+
+async def test_notify_unknown_route_returns_failed():
+    notifier = TelegramNotifier()
+    status, resp, err = await notifier.notify("INVALID_ROUTE", "any text")
+    assert status == "FAILED"
+    assert resp is None
+    assert err is not None
+    assert "INVALID_ROUTE" in err
+
+
+async def test_notify_success_returns_sent_with_message_id():
+    notifier = TelegramNotifier()
+    fake_api_response = {"ok": True, "result": {"message_id": 123}}
+
+    with patch.object(notifier, "send_message", new=AsyncMock(return_value=fake_api_response)):
+        status, resp, err = await notifier.notify("MAIN", "hello main")
+
+    assert status == "SENT"
+    assert err is None
+    assert resp is not None
+    assert resp["_telegram_message_id"] == "123"
+
+
+async def test_notify_send_fails_returns_failed():
+    notifier = TelegramNotifier()
+
+    with patch.object(
+        notifier,
+        "send_message",
+        new=AsyncMock(side_effect=httpx.TimeoutException("timed out")),
+    ):
+        status, resp, err = await notifier.notify("MAIN", "hello")
+
+    assert status == "FAILED"
+    assert resp is None
+    assert err is not None
+    assert "TimeoutException" in err
