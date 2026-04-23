@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 
 from app.repositories.signal_repo import SignalRepository
+from app.domain.models import WebhookEvent
 from sqlalchemy import text
 
 @pytest.fixture
@@ -13,7 +14,16 @@ def signal_repo(db_session: Session) -> SignalRepository:
     return SignalRepository(db_session)
 
 @pytest.fixture
-def base_signal_data() -> Dict[str, Any]:
+def base_signal_data(db_session: Session) -> Dict[str, Any]:
+    # PostgreSQL enforces FK constraint — must create the webhook_events row first
+    webhook = WebhookEvent(
+        id="test-webhook-id",
+        raw_body={},
+        auth_status="valid",
+    )
+    db_session.add(webhook)
+    db_session.commit()
+
     return {
         "webhook_event_id": "test-webhook-id",
         "signal_id": "test-signal-id-1",
