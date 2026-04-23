@@ -96,3 +96,140 @@ def test_summary_returns_correct_counts(client: TestClient, db_session: Session)
 def test_summary_rejects_days_out_of_range(client: TestClient):
     assert client.get("/api/v1/analytics/summary?days=0").status_code == 422
     assert client.get("/api/v1/analytics/summary?days=91").status_code == 422
+
+
+def test_timeline_empty_db(client: TestClient):
+    resp = client.get("/api/v1/analytics/signals/timeline")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 0
+    assert data["signals"] == []
+
+
+def test_timeline_returns_signals_with_decision(client: TestClient, db_session: Session):
+    wh = _make_webhook(db_session)
+    sig = _make_signal(db_session, wh, signal_id="timeline-sig-001")
+    db_session.add(SignalDecision(
+        id=str(uuid.uuid4()),
+        signal_row_id=sig.id,
+        decision=DecisionType.PASS_MAIN,
+        decision_reason="ok",
+        telegram_route=TelegramRoute.MAIN,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db_session.commit()
+
+    resp = client.get("/api/v1/analytics/signals/timeline")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    assert data["signals"][0]["signal_id"] == "timeline-sig-001"
+    assert data["signals"][0]["decision"] == "PASS_MAIN"
+
+
+def test_timeline_days_param_filters(client: TestClient, db_session: Session):
+    wh = _make_webhook(db_session)
+    old_time = datetime.now(timezone.utc) - timedelta(days=10)
+    _make_signal(db_session, wh, signal_id="old-signal", created_at=old_time)
+    db_session.commit()
+
+    resp = client.get("/api/v1/analytics/signals/timeline?days=7")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 0
+
+
+def test_filter_stats_empty_db(client: TestClient):
+    resp = client.get("/api/v1/analytics/filters/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["filter_rules"] == {}
+
+
+def test_filter_stats_returns_grouped_by_rule_code(client: TestClient, db_session: Session):
+    wh = _make_webhook(db_session)
+    sig = _make_signal(db_session, wh)
+    now = datetime.now(timezone.utc)
+    db_session.add(SignalFilterResult(
+        id=str(uuid.uuid4()),
+        signal_row_id=sig.id,
+        rule_code="SYMBOL_ALLOWED",
+        rule_group="validation",
+        result=RuleResult.PASS,
+        severity=RuleSeverity.INFO,
+        score_delta=0.0,
+        details={},
+        created_at=now,
+    ))
+    db_session.add(SignalFilterResult(
+        id=str(uuid.uuid4()),
+        signal_row_id=sig.id,
+        rule_code="SYMBOL_ALLOWED",
+        rule_group="validation",
+        result=RuleResult.FAIL,
+        severity=RuleSeverity.INFO,
+        score_delta=0.0,
+        details={},
+        created_at=now,
+    ))
+    db_session.add(SignalFilterResult(
+        id=str(uuid.uuid4()),
+        signal_row_id=sig.id,
+        rule_code="CONFIDENCE_CHECK",
+        rule_group="quality",
+        result=RuleResult.PASS,
+        severity=RuleSeverity.INFO,
+        score_delta=0.0,
+        details={},
+        created_at=now,
+    ))
+    db_session.commit()
+
+    resp = client.get("/api/v1/analytics/filters/stats")
+    assert resp.status_code == 200
+    data = resp.json()
+    rules = data["filter_rules"]
+    assert rules["SYMBOL_ALLOWED"]["PASS"] == 1
+    assert rules["SYMBOL_ALLOWED"]["FAIL"] == 1
+    assert rules["CONFIDENCE_CHECK"]["PASS"] == 1
+
+
+def test_daily_empty_db(client: TestClient):
+    resp = client.get("/api/v1/analytics/daily")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["daily"] == {}
+
+
+def test_daily_returns_correct_day_buckets(client: TestClient, db_session: Session):
+    wh = _make_webhook(db_session)
+    day1 = datetime(2026, 4, 20, 10, 0, 0, tzinfo=timezone.utc)
+    day2 = datetime(2026, 4, 21, 10, 0, 0, tzinfo=timezone.utc)
+    sig1 = _make_signal(db_session, wh, signal_id="day1-sig", created_at=day1)
+    sig2 = _make_signal(db_session, wh, signal_id="day2-sig", created_at=day2)
+    db_session.add(SignalDecision(
+        id=str(uuid.uuid4()),
+        signal_row_id=sig1.id,
+        decision=DecisionType.PASS_MAIN,
+        decision_reason="ok",
+        telegram_route=TelegramRoute.MAIN,
+        created_at=day1,
+    ))
+    db_session.add(SignalDecision(
+        id=str(uuid.uuid4()),
+        signal_row_id=sig2.id,
+        decision=DecisionType.REJECT,
+        decision_reason="filtered",
+        telegram_route=TelegramRoute.NONE,
+        created_at=day2,
+    ))
+    db_session.commit()
+
+    resp = client.get("/api/v1/analytics/daily?days=30")
+    assert resp.status_code == 200
+    data = resp.json()
+    daily = data["daily"]
+    assert "2026-04-20" in daily
+    assert "2026-04-21" in daily
+    assert daily["2026-04-20"]["PASS_MAIN"] == 1
+    assert daily["2026-04-21"]["REJECT"] == 1
