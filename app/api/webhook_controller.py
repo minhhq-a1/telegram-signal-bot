@@ -13,6 +13,8 @@ from app.repositories.config_repo import ConfigRepository
 from app.repositories.market_event_repo import MarketEventRepository
 from app.services.telegram_notifier import TelegramNotifier
 from app.services.webhook_ingestion_service import WebhookIngestionService
+from app.core.config import settings
+from app.api.rate_limiter import limiter
 
 router = APIRouter(tags=["webhooks"])
 
@@ -25,6 +27,7 @@ router = APIRouter(tags=["webhooks"])
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )
+@limiter.limit(f"{settings.webhook_rate_limit}/minute")
 async def handle_tradingview_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
