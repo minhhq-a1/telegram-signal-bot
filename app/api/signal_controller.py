@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.domain.models import Signal
 from app.domain.schemas import SignalDetailResponse
+from app.api.dependencies import require_dashboard_auth
 
 router = APIRouter(tags=["signals"])
 
 @router.get("/api/v1/signals/{signal_id}", response_model=SignalDetailResponse)
-async def get_signal_detail(signal_id: str, db: Session = Depends(get_db)):
+async def get_signal_detail(signal_id: str, db: Session = Depends(get_db), _auth: None = Depends(require_dashboard_auth)):
     # Eager load các quan hệ để tránh N+1 query
     stmt = (
         select(Signal)

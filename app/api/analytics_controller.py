@@ -8,6 +8,7 @@ from sqlalchemy import select, func, case, cast, Date, text
 
 from app.core.database import get_db
 from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
+from app.api.dependencies import require_dashboard_auth
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 def get_summary(
     days: int = Query(7, ge=1, le=90, description="Number of days to look back"),
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
 ):
     """
     Overview statistics: total signals, decision distribution, delivery rate.
@@ -114,6 +116,7 @@ def get_signal_timeline(
     days: int = Query(7, ge=1, le=90),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
 ):
     """
     Recent signals with their decisions — for the timeline feed.
@@ -186,6 +189,7 @@ def get_signal_timeline(
 def get_filter_stats(
     days: int = Query(7, ge=1, le=90),
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
 ):
     """
     Filter rule performance: how often each rule triggers PASS/WARN/FAIL.
@@ -220,6 +224,7 @@ def get_filter_stats(
 def get_daily_breakdown(
     days: int = Query(14, ge=1, le=90),
     db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
 ):
     """
     Signals per day with decision breakdown — for charts.
