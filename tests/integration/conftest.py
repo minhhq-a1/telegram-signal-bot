@@ -8,34 +8,34 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-os.environ.setdefault("tradingview_shared_secret", "test-secret")
-os.environ.setdefault("database_url", "sqlite:///./test_bootstrap.db")
-os.environ.setdefault("telegram_bot_token", "test-token")
-os.environ.setdefault("telegram_main_chat_id", "main-chat")
-os.environ.setdefault("telegram_warn_chat_id", "warn-chat")
-os.environ.setdefault("telegram_admin_chat_id", "admin-chat")
-
 from app.core.database import get_db  # noqa: E402
 from app.domain.models import Base  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories.config_repo import ConfigRepository  # noqa: E402
 
+INTEGRATION_DATABASE_URL = os.environ.get("INTEGRATION_DATABASE_URL")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip all integration tests when INTEGRATION_DATABASE_URL is not set."""
+    if not INTEGRATION_DATABASE_URL:
+        skip_marker = pytest.mark.skip(
+            reason="INTEGRATION_DATABASE_URL not set — set it to run integration tests against real PostgreSQL"
+        )
+        for item in items:
+            if "tests/integration" in str(item.fspath):
+                item.add_marker(skip_marker)
+
 
 @pytest.fixture
-def db_session(tmp_path) -> Generator[Session, None, None]:
-    db_path = tmp_path / "integration.sqlite3"
-    engine = create_engine(
-        f"sqlite:///{db_path}",
-        connect_args={"check_same_thread": False},
-    )
+def db_session() -> Generator[Session, None, None]:
+    engine = create_engine(INTEGRATION_DATABASE_URL)
+    Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
         bind=engine,
     )
-
-    Base.metadata.create_all(engine)
-
     session = TestingSessionLocal()
     try:
         yield session
@@ -43,7 +43,7 @@ def db_session(tmp_path) -> Generator[Session, None, None]:
         session.close()
         Base.metadata.drop_all(engine)
         engine.dispose()
-        ConfigRepository.reset_cache()  # prevent cache leak between tests
+        ConfigRepository.reset_cache()
 
 
 @pytest.fixture
