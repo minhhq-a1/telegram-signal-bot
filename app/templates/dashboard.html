@@ -548,7 +548,11 @@
 
         // API calls
         async function fetchJSON(url) {
-            const res = await fetch(url);
+            const headers = {};
+            if (window.__TOKEN__) {
+                headers['Authorization'] = 'Bearer ' + window.__TOKEN__;
+            }
+            const res = await fetch(url, { headers });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json();
         }

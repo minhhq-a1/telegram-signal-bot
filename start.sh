@@ -38,4 +38,4 @@ except Exception as e:
 # Start the server
 PORT="${PORT:-8080}"
 echo "🚀 Starting uvicorn on port $PORT..."
-exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
+exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --proxy-headers --forwarded-allow-ips='*'
