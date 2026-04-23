@@ -150,3 +150,134 @@ async def test_notify_send_fails_returns_failed():
     assert resp is None
     assert err is not None
     assert "TimeoutException" in err
+
+
+# ---------------------------------------------------------------------------
+# New tests: smart retry policy (4xx permanent, 5xx / 429 transient)
+# ---------------------------------------------------------------------------
+
+def _make_mock_client(side_effects):
+    """Return a configured async context-manager mock for httpx.AsyncClient."""
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    if isinstance(side_effects, list):
+        mock_client.post = AsyncMock(side_effect=side_effects)
+    else:
+        mock_client.post = AsyncMock(side_effect=[side_effects])
+    return mock_client
+
+
+@pytest.mark.asyncio
+async def test_send_message_4xx_not_retried_raises_immediately():
+    notifier = TelegramNotifier()
+    error_resp = _make_response(403)
+
+    with patch("httpx.AsyncClient") as mock_client_cls, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_client_cls.return_value = _make_mock_client([error_resp])
+
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await notifier.send_message("chat-123", "hello")
+
+    assert exc_info.value.response.status_code == 403
+    mock_sleep.assert_not_called()
+    mock_client_cls.return_value.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_message_401_not_retried():
+    notifier = TelegramNotifier()
+    error_resp = _make_response(401)
+
+    with patch("httpx.AsyncClient") as mock_client_cls, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_client_cls.return_value = _make_mock_client([error_resp])
+
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await notifier.send_message("chat-123", "hello")
+
+    assert exc_info.value.response.status_code == 401
+    mock_sleep.assert_not_called()
+    mock_client_cls.return_value.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_message_400_not_retried():
+    notifier = TelegramNotifier()
+    error_resp = _make_response(400)
+
+    with patch("httpx.AsyncClient") as mock_client_cls, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_client_cls.return_value = _make_mock_client([error_resp])
+
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await notifier.send_message("chat-123", "hello")
+
+    assert exc_info.value.response.status_code == 400
+    mock_sleep.assert_not_called()
+    mock_client_cls.return_value.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_message_500_is_retried():
+    notifier = TelegramNotifier()
+    error_resp = _make_response(500)
+    success_resp = _make_response(200, {"ok": True, "result": {"message_id": 5}})
+
+    with patch("httpx.AsyncClient") as mock_client_cls, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_client_cls.return_value = _make_mock_client([error_resp, success_resp])
+
+        result = await notifier.send_message("chat-123", "hello")
+
+    assert result == {"ok": True, "result": {"message_id": 5}}
+    mock_sleep.assert_called_once_with(1)  # 2**0
+
+
+@pytest.mark.asyncio
+async def test_send_message_429_uses_retry_after_header():
+    notifier = TelegramNotifier()
+
+    # Build a 429 response with a Retry-After header
+    error_resp = MagicMock()
+    error_resp.status_code = 429
+    error_resp.headers = {"Retry-After": "7"}
+    error_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "HTTP 429", request=MagicMock(), response=error_resp
+    )
+
+    success_resp = _make_response(200, {"ok": True, "result": {"message_id": 9}})
+
+    with patch("httpx.AsyncClient") as mock_client_cls, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_client_cls.return_value = _make_mock_client([error_resp, success_resp])
+
+        result = await notifier.send_message("chat-123", "hello")
+
+    assert result == {"ok": True, "result": {"message_id": 9}}
+    mock_sleep.assert_called_once_with(7.0)
+
+
+@pytest.mark.asyncio
+async def test_send_message_429_fallback_to_exponential_when_no_header():
+    notifier = TelegramNotifier()
+
+    # Build a 429 response with NO Retry-After header
+    error_resp = MagicMock()
+    error_resp.status_code = 429
+    error_resp.headers = {}
+    error_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "HTTP 429", request=MagicMock(), response=error_resp
+    )
+
+    success_resp = _make_response(200, {"ok": True, "result": {"message_id": 11}})
+
+    with patch("httpx.AsyncClient") as mock_client_cls, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_client_cls.return_value = _make_mock_client([error_resp, success_resp])
+
+        result = await notifier.send_message("chat-123", "hello")
+
+    assert result == {"ok": True, "result": {"message_id": 11}}
+    mock_sleep.assert_called_once_with(1)  # fallback 2**0
