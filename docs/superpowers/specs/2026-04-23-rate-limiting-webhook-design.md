@@ -38,12 +38,13 @@ Add per-IP rate limiting to the TradingView webhook endpoint (`POST /api/v1/webh
    - Tracks per-IP request counts in-memory with 1-minute sliding window
 
 2. **Configuration** (`app/core/config.py`)
-   - Add `webhook_rate_limit: int` field to Settings
-   - Read from env var `WEBHOOK_RATE_LIMIT` (default: 50)
-   - Pydantic validates as positive integer
+   - Add `webhook_rate_limit: int = 50` field to Settings
+   - pydantic-settings v2 auto-reads `WEBHOOK_RATE_LIMIT` env var from field name (no `Field(env=...)` needed)
+   - Default value: 50
 
 3. **Decorator application** (`app/api/webhook_controller.py`)
    - Apply `@limiter.limit(f"{settings.webhook_rate_limit}/minute")` to webhook handler
+   - slowapi requires the `@limiter.limit()` decorator to be placed **between** `@router.post()` and the function definition (not above the router decorator)
    - slowapi intercepts requests, checks IP count, allows/denies per limit
 
 4. **Error handling**
@@ -63,7 +64,7 @@ Request → Limiter checks IP count → Count < limit?
 
 **Example sequence (51st request from same IP):**
 ```
-GET /api/v1/webhooks/tradingview (from IP 192.168.1.1)
+POST /api/v1/webhooks/tradingview (from IP 192.168.1.1)
 ↓
 Limiter: "192.168.1.1 has 50 requests in last minute"
 ↓
@@ -90,29 +91,31 @@ Response: 429 with headers {Retry-After: 60, X-RateLimit-Limit: 50, X-RateLimit-
    ```python
    class Settings(BaseSettings):
        ...
-       webhook_rate_limit: int = Field(default=50, env="WEBHOOK_RATE_LIMIT")
+       webhook_rate_limit: int = 50  # reads WEBHOOK_RATE_LIMIT env var automatically
    ```
 
 3. **`app/api/webhook_controller.py`** (MODIFY)
    ```python
    from app.api.rate_limiter import limiter
-   
+
    @router.post(
        "/api/v1/webhooks/tradingview",
        ...
    )
-   @limiter.limit("{settings.webhook_rate_limit}/minute")
-   async def handle_tradingview_webhook(...):
+   @limiter.limit(f"{settings.webhook_rate_limit}/minute")
+   async def handle_tradingview_webhook(request: Request, ...):
        ...
    ```
 
 4. **`app/main.py`** (MODIFY)
    ```python
+   from slowapi import _rate_limit_exceeded_handler
+   from slowapi.errors import RateLimitExceeded
    from app.api.rate_limiter import limiter
-   
+
    app = FastAPI(...)
    app.state.limiter = limiter
-   app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+   app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
    ```
 
 5. **`.env.example`** (MODIFY - add documentation)
@@ -177,10 +180,8 @@ Response: 429 with headers {Retry-After: 60, X-RateLimit-Limit: 50, X-RateLimit-
 
 ## Dependencies
 
-**New package:** `slowapi>=0.1.9`
-- FastAPI/Starlette rate limiter
-- Battle-tested, maintained
-- Zero breaking changes expected during MVP phase
+**New package:** `slowapi>=0.1.9`  
+Added to `requirements.txt` (project uses requirements.txt for dependency management, not pyproject.toml).
 
 ---
 
