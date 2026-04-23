@@ -15,30 +15,68 @@ class TelegramNotifier:
 
     async def send_message(self, chat_id: str, text: str) -> dict:
         """
-        Thực hiện HTTP POST tới Telegram API với cơ chế retry 3 lần exponential backoff (1s, 2s, 4s).
+        POST to Telegram API with smart retry:
+        - TimeoutException / RequestError: retry with exponential backoff (1s, 2s, 4s)
+        - 429 Too Many Requests: retry using Retry-After header (fallback: exponential)
+        - 5xx Server Error: retry with exponential backoff
+        - 4xx (not 429): permanent failure — raise immediately, no retry
         """
-        payload = {
-            "chat_id": chat_id,
-            "text": text,
-        }
-        
+        payload = {"chat_id": chat_id, "text": text}
         max_attempts = 4
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             for attempt in range(max_attempts):
                 try:
                     response = await client.post(self.api_url, json=payload)
                     response.raise_for_status()
                     return response.json()
-                except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+
+                except httpx.HTTPStatusError as e:
+                    status = e.response.status_code
+
+                    if 400 <= status < 500 and status != 429:
+                        logger.error(
+                            "telegram_send_permanent_failure",
+                            extra={"chat_id": chat_id, "status_code": status, "error": str(e)},
+                        )
+                        raise
+
+                    if status == 429:
+                        try:
+                            sleep_secs = float(e.response.headers.get("Retry-After", ""))
+                        except (ValueError, TypeError):
+                            sleep_secs = 2 ** attempt
+                        logger.warning(
+                            "telegram_send_rate_limited",
+                            extra={"chat_id": chat_id, "attempt": attempt + 1, "retry_after": sleep_secs},
+                        )
+                        if attempt < max_attempts - 1:
+                            await asyncio.sleep(sleep_secs)
+                            continue
+                        logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
+                        raise
+
+                    # 5xx — retry with exponential backoff
                     logger.warning(
                         "telegram_send_failed",
-                        extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)}
+                        extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)},
                     )
                     if attempt < max_attempts - 1:
-                        await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
+                        await asyncio.sleep(2 ** attempt)
                     else:
                         logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
-                        raise e
+                        raise
+
+                except (httpx.TimeoutException, httpx.RequestError) as e:
+                    logger.warning(
+                        "telegram_send_failed",
+                        extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)},
+                    )
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(2 ** attempt)
+                    else:
+                        logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
+                        raise
 
     async def notify(self, route: str, text: str) -> tuple[str, Optional[dict], str | None]:
         """
