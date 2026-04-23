@@ -4,21 +4,20 @@ import uvicorn
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.api.health_controller import router as health_router
 from app.api.webhook_controller import router as webhook_router
 from app.api.signal_controller import router as signal_router
 from app.api.analytics_controller import router as analytics_router
-from app.api.rate_limiter import limiter
+from app.api.rate_limiter import limiter, rate_limit_exceeded_handler
 from app.api.dependencies import require_dashboard_auth
 
 app = FastAPI(title=settings.app_name, version=settings.app_version,
               description="Telegram Signal Bot API - TradingView Webhook Handler")
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.include_router(health_router)
 app.include_router(webhook_router)
