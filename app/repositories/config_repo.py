@@ -8,6 +8,18 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base. Dicts are merged; lists and scalars replace."""
+    result = dict(base)
+    for key, override_val in override.items():
+        base_val = result.get(key)
+        if isinstance(base_val, dict) and isinstance(override_val, dict):
+            result[key] = _deep_merge(base_val, override_val)
+        else:
+            result[key] = override_val
+    return result
+
+
 class ConfigRepository:
     # Class-level cache variables (shared across requests in same worker)
     _cached_config: dict | None = None
@@ -51,10 +63,10 @@ class ConfigRepository:
         config_record = self.db.execute(stmt).scalar_one_or_none()
 
         if config_record and config_record.config_value:
-            merged_config = {
-                **ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
-                **config_record.config_value,
-            }
+            merged_config = _deep_merge(
+                ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
+                config_record.config_value,
+            )
             # Cập nhật cache
             ConfigRepository._cached_config = merged_config
             ConfigRepository._cache_time = now
