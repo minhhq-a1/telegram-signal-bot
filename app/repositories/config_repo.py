@@ -1,3 +1,4 @@
+import copy
 import time
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -9,14 +10,27 @@ logger = get_logger(__name__)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge override into base. Dicts are merged; lists and scalars replace."""
-    result = dict(base)
-    for key, override_val in override.items():
-        base_val = result.get(key)
-        if isinstance(base_val, dict) and isinstance(override_val, dict):
-            result[key] = _deep_merge(base_val, override_val)
+    """Recursively merge override into base. Dicts are merged; lists and scalars replace.
+
+    Keys present only in base are deep-copied so the result shares no nested
+    references with the original base object (important when base is a class-level
+    constant like _DEFAULT_SIGNAL_BOT_CONFIG).
+    """
+    result: dict = {}
+    all_keys = base.keys() | override.keys()
+    for key in all_keys:
+        in_base = key in base
+        in_override = key in override
+        if in_base and in_override:
+            base_val, override_val = base[key], override[key]
+            if isinstance(base_val, dict) and isinstance(override_val, dict):
+                result[key] = _deep_merge(base_val, override_val)
+            else:
+                result[key] = override_val
+        elif in_override:
+            result[key] = override[key]
         else:
-            result[key] = override_val
+            result[key] = copy.deepcopy(base[key])
     return result
 
 
@@ -74,4 +88,4 @@ class ConfigRepository:
             return merged_config
         
         logger.warning("signal_bot_config_not_found_in_db")
-        return dict(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG)
+        return copy.deepcopy(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG)

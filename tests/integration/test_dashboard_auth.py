@@ -28,7 +28,14 @@ def test_dashboard_correct_token_returns_html(client: TestClient):
 
 def test_dashboard_html_contains_injected_token(client: TestClient):
     resp = client.get("/dashboard", headers={"Authorization": "Bearer test-dash-token"}, follow_redirects=False)
-    assert 'window.__TOKEN__ = "test-dash-token"' in resp.text
+    assert "window.__TOKEN__ = " in resp.text
+    assert "test-dash-token" in resp.text
+
+def test_dashboard_token_injection_safe_with_special_chars(client: TestClient, monkeypatch):
+    monkeypatch.setattr(settings, "dashboard_token", 'tok"en</script><script>alert(1)')
+    resp = client.get("/dashboard", headers={"Authorization": 'Bearer tok"en</script><script>alert(1)'}, follow_redirects=False)
+    assert resp.status_code == 200
+    assert "</script><script>" not in resp.text  # not injected raw into HTML
 
 def test_dashboard_html_not_directly_accessible(client: TestClient):
     assert client.get("/static/dashboard.html").status_code == 404
