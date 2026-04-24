@@ -124,3 +124,40 @@ def test_get_signal_bot_config_deep_merges_nested_dicts():
     assert config["confidence_thresholds"]["1h"] == 0.70
     assert config["rr_min_base"] == 2.5
     ConfigRepository.reset_cache()
+
+
+# ── Immutability tests ────────────────────────────────────────────────────────
+
+def test_merged_config_does_not_share_nested_reference_with_defaults():
+    """Mutating the returned config must not affect _DEFAULT_SIGNAL_BOT_CONFIG."""
+    original_1m = ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["confidence_thresholds"]["1m"]
+
+    db_mock = MagicMock()
+    mock_record = MagicMock()
+    mock_record.config_value = {"confidence_thresholds": {"5m": 0.95}}
+    db_mock.execute.return_value.scalar_one_or_none.return_value = mock_record
+
+    ConfigRepository.reset_cache()
+    repo = ConfigRepository(db=db_mock)
+    config = repo.get_signal_bot_config()
+
+    config["confidence_thresholds"]["1m"] = 0.0
+    assert ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["confidence_thresholds"]["1m"] == original_1m
+    ConfigRepository.reset_cache()
+
+
+def test_fallback_config_does_not_share_nested_reference_with_defaults():
+    """Mutating the fallback config (no DB row) must not affect _DEFAULT_SIGNAL_BOT_CONFIG."""
+    original_symbols = ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"]
+
+    db_mock = MagicMock()
+    db_mock.execute.return_value.scalar_one_or_none.return_value = None
+
+    ConfigRepository.reset_cache()
+    repo = ConfigRepository(db=db_mock)
+    config = repo.get_signal_bot_config()
+
+    config["allowed_symbols"].append("POISONED")
+    assert ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"] is original_symbols
+    assert "POISONED" not in ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"]
+    ConfigRepository.reset_cache()

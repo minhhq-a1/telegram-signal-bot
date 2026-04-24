@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import os
 import uvicorn
 from fastapi import Depends, FastAPI, Request
@@ -35,7 +36,10 @@ async def dashboard(_auth: None = Depends(require_dashboard_auth)) -> HTMLRespon
     with open(os.path.join(_TEMPLATES_DIR, "dashboard.html"), encoding="utf-8") as f:
         html = f.read()
     token_value = settings.dashboard_token or ""
-    injection = f'<script>window.__TOKEN__ = "{token_value}";</script>'
+    # json.dumps encodes quotes and backslashes; replace "</" to prevent
+    # premature </script> tag parsing by the browser.
+    safe_token = json.dumps(token_value).replace("</", r"<\/")
+    injection = f"<script>window.__TOKEN__ = {safe_token};</script>"
     html = html.replace("</head>", f"{injection}\n</head>", 1)
     return HTMLResponse(content=html)
 

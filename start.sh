@@ -37,5 +37,9 @@ except Exception as e:
 
 # Start the server
 PORT="${PORT:-8080}"
+# FORWARDED_ALLOW_IPS defaults to '*' because Railway routes all traffic through
+# a single trusted reverse-proxy layer — the app never receives a direct public
+# connection. If the deployment topology changes, set this env var explicitly.
+FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-*}"
 echo "🚀 Starting uvicorn on port $PORT..."
-exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --proxy-headers --forwarded-allow-ips='*'
+exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT" --proxy-headers --forwarded-allow-ips="$FORWARDED_ALLOW_IPS"
