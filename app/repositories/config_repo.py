@@ -51,6 +51,85 @@ class ConfigRepository:
         "news_block_before_min": 15,
         "news_block_after_min": 30,
         "log_reject_to_admin": True,
+        # --- V1.1 config defaults ---
+        "rr_tolerance_pct": 0.10,
+        "rr_target_by_type": {
+            "SHORT_SQUEEZE": 2.5,
+            "SHORT_V73": 1.67,
+            "LONG_V73": 1.67,
+        },
+        "score_pass_threshold": 75,
+        "strategy_thresholds": {
+            "SHORT_SQUEEZE": {
+                "rsi_min": 35,
+                "rsi_slope_max": -2,
+                "kc_position_max": 0.55,
+                "atr_pct_min": 0.20,
+            },
+            "SHORT_V73": {
+                "rsi_min": 60,
+                "stoch_k_min": 70,
+            },
+            "LONG_V73": {
+                "rsi_max": 35,
+                "stoch_k_max": 20,
+            },
+        },
+        "rescoring": {
+            "SHORT_SQUEEZE": {
+                "base": 70,
+                "bonuses": {
+                    "vol_regime_breakout_imminent": 8,
+                    "regime_weak_trend_down": 6,
+                    "regime_strong_trend_down": 8,
+                    "mom_direction_neg1": 5,
+                    "squeeze_bars_ge_4": 3,
+                    "squeeze_bars_ge_6": 5,
+                    "rsi_ge_40": 4,
+                    "rsi_slope_le_neg4": 4,
+                    "atr_percentile_ge_70": 3,
+                    "kc_position_le_040": 3,
+                    "confidence_ge_090": 3,
+                },
+                "penalties": {
+                    "regime_strong_trend_up": -15,
+                    "regime_weak_trend_up": -8,
+                    "rsi_lt_35": -8,
+                    "atr_pct_lt_020": -8,
+                    "atr_pct_gt_150": -5,
+                },
+            },
+            "SHORT_V73": {
+                "base": 72,
+                "bonuses": {
+                    "rsi_ge_70": 5,
+                    "stoch_ge_85": 5,
+                    "rsi_slope_le_neg4": 4,
+                    "regime_trend_down": 6,
+                    "confidence_ge_090": 3,
+                },
+                "penalties": {
+                    "regime_strong_trend_up": -15,
+                    "vol_ranging_high": -6,
+                    "atr_pct_lt_020": -6,
+                },
+            },
+            "LONG_V73": {
+                "base": 72,
+                "bonuses": {
+                    "rsi_le_25": 5,
+                    "stoch_le_10": 5,
+                    "rsi_slope_ge_2": 4,
+                    "regime_trend_up": 6,
+                    "confidence_ge_090": 3,
+                },
+                "penalties": {
+                    "regime_strong_trend_down": -15,
+                    "vol_ranging_high": -6,
+                    "atr_pct_lt_020": -6,
+                },
+            },
+        },
     }
 
     def __init__(self, db: Session):
