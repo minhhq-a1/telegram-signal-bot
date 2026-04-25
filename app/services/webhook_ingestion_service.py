@@ -82,12 +82,14 @@ class WebhookIngestionService:
 
         is_authed = AuthService.validate_secret(payload.secret)
         auth_status = AuthStatus.OK if is_authed else AuthStatus.INVALID_SECRET
+        redacted_body = payload.model_dump(mode="json")
+        redacted_body["secret"] = "***REDACTED***"
 
         webhook_event = self.webhook_repo.create(
             {
                 "source_ip": source_ip,
                 "http_headers": headers,
-                "raw_body": payload.model_dump(mode="json"),
+                "raw_body": redacted_body,
                 "is_valid_json": True,
                 "auth_status": auth_status.value,
             }
@@ -173,7 +175,7 @@ class WebhookIngestionService:
                 {
                     "source_ip": source_ip,
                     "http_headers": headers,
-                    "raw_body": {"_raw_body_text": raw_body_text},
+                    "raw_body": {"_raw_body_text": "***REDACTED***"},
                     "is_valid_json": False,
                     "auth_status": AuthStatus.MISSING.value,
                     "error_message": "INVALID_JSON: Request body is not valid JSON",
@@ -209,7 +211,10 @@ class WebhookIngestionService:
                 {
                     "source_ip": source_ip,
                     "http_headers": headers,
-                    "raw_body": payload_dict if isinstance(payload_dict, dict) else {"payload": payload_dict},
+                    "raw_body": {
+                        key: ("***REDACTED***" if key == "secret" else value)
+                        for key, value in payload_dict.items()
+                    } if isinstance(payload_dict, dict) else {"payload": "***REDACTED***"},
                     "is_valid_json": True,
                     "auth_status": AuthStatus.MISSING.value,
                     "error_message": error_message,
