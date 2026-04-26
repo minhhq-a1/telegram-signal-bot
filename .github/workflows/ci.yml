@@ -48,6 +48,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Wait for PostgreSQL health
+        run: |
+          for i in $(seq 1 30); do
+            if PGPASSWORD=test_pass psql -h localhost -U test_user -d test_db -c 'select 1' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time" >&2
+          exit 1
+
+      - name: Run integration migration
+        run: PGPASSWORD=test_pass psql -h localhost -U test_user -d test_db -f migrations/001_init.sql
+
       - name: Run test suite
         run: python -m pytest -q
 

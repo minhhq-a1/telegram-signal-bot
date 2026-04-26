@@ -64,6 +64,7 @@ class Signal(Base):
     filter_results: Mapped[List["SignalFilterResult"]] = relationship(back_populates="signal")
     decision: Mapped["SignalDecision"] = relationship(back_populates="signal")
     telegram_messages: Mapped[List["TelegramMessage"]] = relationship(back_populates="signal")
+    outcomes: Mapped[List["SignalOutcome"]] = relationship(back_populates="signal")
 
 class SignalFilterResult(Base):
     __tablename__ = "signal_filter_results"
@@ -107,6 +108,19 @@ class TelegramMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     signal: Mapped["Signal"] = relationship(back_populates="telegram_messages")
+
+class SignalOutcome(Base):
+    __tablename__ = "signal_outcomes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    signal_row_id: Mapped[str] = mapped_column(ForeignKey("signals.id", ondelete="CASCADE"), unique=True)
+    is_win: Mapped[bool | None] = mapped_column(nullable=True)
+    pnl_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    signal: Mapped["Signal"] = relationship(back_populates="outcomes")
 
 class SystemConfig(Base):
     __tablename__ = "system_configs"
