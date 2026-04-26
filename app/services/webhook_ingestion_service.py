@@ -244,7 +244,16 @@ class WebhookIngestionService:
             msg_text = MessageRenderer.render_warning(norm_data, filter_result.server_score, reason_str)
             route_to_send = TelegramRoute.WARN
         elif filter_result.final_decision == DecisionType.REJECT and config.get("log_reject_to_admin"):
-            msg_text = MessageRenderer.render_reject_admin(norm_data, filter_result.decision_reason)
+            from app.services.reject_codes import rule_code_to_reject_code
+
+            first_fail = next(
+                (r for r in filter_result.filter_results if r.result.value == "FAIL"),
+                None,
+            )
+            reject_code = rule_code_to_reject_code(first_fail.rule_code) if first_fail else None
+            msg_text = MessageRenderer.render_reject_admin(
+                norm_data, filter_result.decision_reason, reject_code=reject_code
+            )
             route_to_send = TelegramRoute.ADMIN
 
         if not msg_text or not route_to_send:

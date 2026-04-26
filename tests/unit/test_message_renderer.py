@@ -125,3 +125,41 @@ def test_render_reject_admin_has_no_confidence_or_score():
     text = MessageRenderer.render_reject_admin(signal, "Cooldown active")
     assert "Conf:" not in text
     assert "Score:" not in text
+
+
+def test_render_reject_admin_includes_reject_code():
+    signal = {
+        "side": "SHORT",
+        "symbol": "BTCUSD",
+        "timeframe": "15m",
+        "signal_id": "sig-789",
+    }
+    text = MessageRenderer.render_reject_admin(
+        signal, "Strategy validation failed: SQ_NO_FIRED", reject_code="SQ_NO_FIRED"
+    )
+    assert "RejectCode:" in text
+    assert "SQ_NO_FIRED" in text
+
+
+def test_render_reject_admin_no_code_when_none():
+    signal = {
+        "side": "SHORT",
+        "symbol": "BTCUSD",
+        "timeframe": "15m",
+        "signal_id": "sig-999",
+    }
+    text = MessageRenderer.render_reject_admin(signal, "Some error", reject_code=None)
+    assert "RejectCode:" not in text
+
+
+def test_render_reject_admin_backward_compat_no_reject_code():
+    """Existing calls without reject_code still work"""
+    signal = {
+        "side": "SHORT",
+        "symbol": "BTCUSD",
+        "timeframe": "15m",
+        "signal_id": "sig-000",
+    }
+    text = MessageRenderer.render_reject_admin(signal, "TIMEFRAME_ALLOWED")
+    assert "REJECTED" in text
+    assert "TIMEFRAME_ALLOWED" in text
