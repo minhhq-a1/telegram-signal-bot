@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     # App Config
     app_name: str = "Telegram Signal Bot"
@@ -32,5 +33,10 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore"
     )
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"prod", "production"}
+
 
 settings = Settings()

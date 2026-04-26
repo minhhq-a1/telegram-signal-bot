@@ -1,3 +1,4 @@
+from app.core.redaction import redact_sensitive_payload
 from app.domain.schemas import TradingViewWebhookPayload
 
 
@@ -29,7 +30,7 @@ class SignalNormalizer:
                 risk_reward = round(reward / risk, 4)
 
         # Convert to raw dictionary
-        raw_payload = payload.model_dump(mode="json")
+        raw_payload = redact_sensitive_payload(payload.model_dump(mode="json"))
         
         return {
             "webhook_event_id": webhook_event_id,

@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.enums import AuthStatus, DecisionType, DeliveryStatus, TelegramRoute
 from app.core.logging import logger
+from app.core.redaction import redact_sensitive_payload
 from app.domain.schemas import ErrorResponse, TradingViewWebhookPayload, WebhookAcceptedResponse
 from app.repositories.config_repo import ConfigRepository
 from app.repositories.decision_repo import DecisionRepository
@@ -86,8 +87,8 @@ class WebhookIngestionService:
         webhook_event = self.webhook_repo.create(
             {
                 "source_ip": source_ip,
-                "http_headers": headers,
-                "raw_body": payload.model_dump(mode="json"),
+                "http_headers": redact_sensitive_payload(headers),
+                "raw_body": redact_sensitive_payload(payload.model_dump(mode="json")),
                 "is_valid_json": True,
                 "auth_status": auth_status.value,
             }
@@ -172,8 +173,8 @@ class WebhookIngestionService:
             self.webhook_repo.create(
                 {
                     "source_ip": source_ip,
-                    "http_headers": headers,
-                    "raw_body": {"_raw_body_text": raw_body_text},
+                    "http_headers": redact_sensitive_payload(headers),
+                    "raw_body": {"_raw_body_text": "***REDACTED***"},
                     "is_valid_json": False,
                     "auth_status": AuthStatus.MISSING.value,
                     "error_message": "INVALID_JSON: Request body is not valid JSON",
@@ -208,8 +209,8 @@ class WebhookIngestionService:
             self.webhook_repo.create(
                 {
                     "source_ip": source_ip,
-                    "http_headers": headers,
-                    "raw_body": payload_dict if isinstance(payload_dict, dict) else {"payload": payload_dict},
+                    "http_headers": redact_sensitive_payload(headers),
+                    "raw_body": redact_sensitive_payload(payload_dict) if isinstance(payload_dict, dict) else {"payload": "***REDACTED***"},
                     "is_valid_json": True,
                     "auth_status": AuthStatus.MISSING.value,
                     "error_message": error_message,

@@ -2,22 +2,42 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.domain.models import Signal, WebhookEvent
 
-def test_webhook_accepted_valid_payload(client: TestClient, valid_payload: dict):
+
+def _get_header_case_insensitive(headers: dict, header_name: str):
+    for key, value in headers.items():
+        if str(key).lower() == header_name.lower():
+            return value
+    return None
+
+def test_webhook_accepted_valid_payload(client: TestClient, db_session, valid_payload: dict):
     """
     Test case: Webhook controller processes a valid payload successfully
     """
-    response = client.post("/api/v1/webhooks/tradingview", json=valid_payload)
-    
+    response = client.post(
+        "/api/v1/webhooks/tradingview",
+        json=valid_payload,
+        headers={"Authorization": "Bearer super-secret-token", "X-Api-Token": "custom-api-token"},
+    )
+
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "accepted"
     assert data["signal_id"] == valid_payload["signal_id"]
     assert "decision" in data
     assert "timestamp" in data
+
+    event = db_session.execute(select(WebhookEvent)).scalars().one()
+    signal = db_session.execute(select(Signal)).scalars().one()
+
+    assert event.raw_body["secret"] == "***REDACTED***"
+    assert signal.raw_payload["secret"] == "***REDACTED***"
+    assert _get_header_case_insensitive(event.http_headers, "authorization") == "***REDACTED***"
+    assert _get_header_case_insensitive(event.http_headers, "x-api-token") == "***REDACTED***"
 
 def test_webhook_rejected_invalid_secret(client: TestClient, valid_payload: dict):
     """

@@ -83,14 +83,23 @@ def test_webhook_logs_invalid_json_before_rejecting(client, db_session):
     assert event.is_valid_json is False
     assert event.auth_status == AuthStatus.MISSING
     assert event.error_message == "INVALID_JSON: Request body is not valid JSON"
-    assert event.raw_body["_raw_body_text"] == '{"signal_id": "broken", "signal": "long"'
+    assert event.raw_body["_raw_body_text"] == "***REDACTED***"
 
 
 def test_webhook_logs_invalid_schema_before_rejecting(client, db_session, valid_payload):
     invalid_payload = dict(valid_payload)
     invalid_payload.pop("price")
+    invalid_payload["metadata"] = {
+        **valid_payload["metadata"],
+        "nested_token": "metadata-token-value",
+        "auth": {"api_key": "nested-api-key-value"},
+    }
 
-    response = client.post("/api/v1/webhooks/tradingview", json=invalid_payload)
+    response = client.post(
+        "/api/v1/webhooks/tradingview",
+        json=invalid_payload,
+        headers={"Authorization": "Bearer schema-secret-token"},
+    )
 
     assert response.status_code == 400
     payload = response.json()
@@ -102,6 +111,10 @@ def test_webhook_logs_invalid_schema_before_rejecting(client, db_session, valid_
     assert event.error_message is not None
     assert event.error_message.startswith("INVALID_SCHEMA:")
     assert event.raw_body["symbol"] == valid_payload["symbol"]
+    assert event.raw_body["secret"] == "***REDACTED***"
+    assert event.raw_body["metadata"]["nested_token"] == "***REDACTED***"
+    assert event.raw_body["metadata"]["auth"]["api_key"] == "***REDACTED***"
+    assert event.http_headers["authorization"] == "***REDACTED***"
 
 
 def test_get_signal_detail_returns_nested_contract(client, db_session):
