@@ -83,7 +83,7 @@ def test_webhook_logs_invalid_json_before_rejecting(client, db_session):
     assert event.is_valid_json is False
     assert event.auth_status == AuthStatus.MISSING
     assert event.error_message == "INVALID_JSON: Request body is not valid JSON"
-    assert event.raw_body["_raw_body_text"] == '{"signal_id": "broken", "signal": "long"'
+    assert event.raw_body["_raw_body_text"] == "***REDACTED***"
 
 
 def test_webhook_logs_invalid_schema_before_rejecting(client, db_session, valid_payload):
