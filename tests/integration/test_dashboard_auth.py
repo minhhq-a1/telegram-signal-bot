@@ -55,6 +55,23 @@ def test_signal_detail_correct_token_passes_auth(client: TestClient):
     resp = client.get("/api/v1/signals/nonexistent", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 404  # auth passed, signal not found
 
-def test_open_access_when_no_token_configured(client: TestClient, monkeypatch):
+def test_open_access_when_no_token_configured_in_dev(client: TestClient, monkeypatch):
     monkeypatch.setattr(settings, "dashboard_token", None)
+    monkeypatch.setattr(settings, "app_env", "dev")
     assert client.get("/api/v1/analytics/summary").status_code == 200
+
+
+def test_dashboard_fail_closed_when_no_token_configured_in_prod_alias(client: TestClient, monkeypatch):
+    monkeypatch.setattr(settings, "dashboard_token", None)
+    monkeypatch.setattr(settings, "app_env", "prod")
+    resp = client.get("/api/v1/analytics/summary")
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Dashboard auth misconfigured"
+
+
+def test_dashboard_fail_closed_when_no_token_configured_in_production(client: TestClient, monkeypatch):
+    monkeypatch.setattr(settings, "dashboard_token", None)
+    monkeypatch.setattr(settings, "app_env", "production")
+    resp = client.get("/api/v1/signals/nonexistent")
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Dashboard auth misconfigured"

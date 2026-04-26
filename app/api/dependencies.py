@@ -6,7 +6,7 @@ from app.core.config import settings
 
 def require_dashboard_auth(request: Request) -> None:
     if not settings.dashboard_token:
-        if settings.app_env.lower() == "prod":
+        if settings.is_production:
             raise HTTPException(status_code=503, detail="Dashboard auth misconfigured")
         return
     auth_header = request.headers.get("Authorization", "")
