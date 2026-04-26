@@ -89,6 +89,8 @@ docs/
 ├── DATABASE_SCHEMA.md      # DDL + schema reference
 ├── API_REFERENCE.md        # Endpoint docs
 ├── DEPLOYMENT.md           # Setup + checklist
+├── DB_MIGRATION_RUNBOOK.md # Migration/versioning runbook
+├── BACKUP_RECOVERY_RUNBOOK.md # Backup/restore/restore-drill guide
 ├── CONVENTIONS.md          # Coding conventions cho AI agent
 ├── TASKS.md                # Task breakdown + dependency order
 ├── TEST_CASES.md           # Test cases với input/output
@@ -132,17 +134,21 @@ docker compose up -d db
 
 ### 3. Migration local
 
-Với database mới, migration sẽ được Postgres container tự chạy một lần qua `./migrations -> /docker-entrypoint-initdb.d`.
-
-Bạn chỉ cần chạy manual migration khi:
-- đang dùng database cũ đã có volume
-- hoặc chủ động tắt/reset auto-init flow
-
-Nếu cần chạy manual, dùng DSN của `psql`, không dùng trực tiếp SQLAlchemy URL:
+Repo hiện dùng **raw SQL versioned flow** với runner chính thức:
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d signal_bot -f migrations/001_init.sql
+python scripts/db/migrate.py apply
 ```
+
+Kiểm tra trạng thái migration:
+
+```bash
+python scripts/db/migrate.py status
+```
+
+Chi tiết xem thêm:
+- `docs/DB_MIGRATION_RUNBOOK.md`
+- `docs/BACKUP_RECOVERY_RUNBOOK.md`
 
 ### 4. Cài dependencies
 

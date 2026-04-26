@@ -2,20 +2,17 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import get_db  # noqa: E402
+from app.core.migrations import apply_migrations_to_url  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories.config_repo import ConfigRepository  # noqa: E402
 
 INTEGRATION_DATABASE_URL = os.environ.get("INTEGRATION_DATABASE_URL")
-MIGRATION_PATH = Path(__file__).resolve().parents[2] / "migrations" / "001_init.sql"
-MIGRATION_SQL = MIGRATION_PATH.read_text(encoding="utf-8")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -33,7 +30,7 @@ def _reset_db_with_migration(engine) -> None:
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
-        conn.execute(text(MIGRATION_SQL))
+    apply_migrations_to_url(INTEGRATION_DATABASE_URL)
 
 
 @pytest.fixture

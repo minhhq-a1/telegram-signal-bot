@@ -16,24 +16,9 @@ export DATABASE_URL="${DATABASE_URL/postgresql:\/\//postgresql+psycopg://}"
 export DATABASE_URL="${DATABASE_URL/postgres:\/\//postgresql+psycopg://}"
 echo "✅ DATABASE_URL driver normalized."
 
-# Run migration (idempotent)
-echo "Running database migration..."
-python3 -c "
-import os
-import psycopg
-# Dùng driver postgresql:// cơ bản cho migration script (psycopg direct)
-url = os.environ['DATABASE_URL'].replace('postgresql+psycopg://', 'postgresql://')
-try:
-    with psycopg.connect(url) as conn:
-        with conn.cursor() as cur:
-            sql = open('migrations/001_init.sql').read()
-            cur.execute(sql)
-        conn.commit()
-    print('✅ Migration: OK')
-except Exception as e:
-    print(f'❌ Migration Failed: {e}')
-    exit(1)
-"
+# Run versioned raw-SQL migrations (idempotent)
+echo "Running database migrations..."
+python3 scripts/db/migrate.py apply
 
 # Start the server
 PORT="${PORT:-8080}"

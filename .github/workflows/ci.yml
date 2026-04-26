@@ -59,15 +59,68 @@ jobs:
           echo "PostgreSQL did not become ready in time" >&2
           exit 1
 
-      - name: Run integration migration
-        run: PGPASSWORD=test_pass psql -h localhost -U test_user -d test_db -f migrations/001_init.sql
+      - name: Run versioned migrations
+        run: python scripts/db/migrate.py apply --database-url "$INTEGRATION_DATABASE_URL"
 
       - name: Run test suite
         run: python -m pytest -q
 
-  docker-build:
+  restore-drill:
     runs-on: ubuntu-latest
     needs: test
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      INTEGRATION_DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Wait for PostgreSQL health
+        run: |
+          for i in $(seq 1 30); do
+            if PGPASSWORD=test_pass psql -h localhost -U test_user -d test_db -c 'select 1' >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready in time" >&2
+          exit 1
+
+      - name: Run restore drill
+        run: |
+          chmod +x scripts/db/restore_drill.sh
+          INTEGRATION_DATABASE_URL="$INTEGRATION_DATABASE_URL" bash scripts/db/restore_drill.sh
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs:
+      - test
+      - restore-drill
 
     steps:
       - name: Checkout repository

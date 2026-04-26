@@ -19,3 +19,24 @@ def test_db_fixture_reapplies_migration_for_next_test_session(db_session):
 
     assert row is not None
     assert row[0]["enable_news_block"] is True
+
+
+def test_db_fixture_tracks_versioned_migrations(db_session):
+    rows = db_session.execute(
+        text("SELECT version, filename FROM schema_migrations ORDER BY version")
+    ).all()
+
+    assert rows == [
+        ("001", "001_init.sql"),
+        ("002", "002_add_ops_migration_baseline.sql"),
+    ]
+
+
+def test_db_fixture_bootstraps_ops_baseline_config(db_session):
+    row = db_session.execute(
+        text("SELECT config_value FROM system_configs WHERE config_key = 'db_ops_baseline'")
+    ).first()
+
+    assert row is not None
+    assert row[0]["migration_strategy"] == "raw_sql_versioned"
+    assert row[0]["requires_restore_drill"] is True
