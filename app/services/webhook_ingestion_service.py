@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.enums import AuthStatus, DecisionType, DeliveryStatus, TelegramRoute
 from app.core.logging import logger
+from app.core.redaction import redact_sensitive_payload
 from app.domain.schemas import ErrorResponse, TradingViewWebhookPayload, WebhookAcceptedResponse
 from app.repositories.config_repo import ConfigRepository
 from app.repositories.decision_repo import DecisionRepository
@@ -82,14 +83,12 @@ class WebhookIngestionService:
 
         is_authed = AuthService.validate_secret(payload.secret)
         auth_status = AuthStatus.OK if is_authed else AuthStatus.INVALID_SECRET
-        redacted_body = payload.model_dump(mode="json")
-        redacted_body["secret"] = "***REDACTED***"
 
         webhook_event = self.webhook_repo.create(
             {
                 "source_ip": source_ip,
-                "http_headers": headers,
-                "raw_body": redacted_body,
+                "http_headers": redact_sensitive_payload(headers),
+                "raw_body": redact_sensitive_payload(payload.model_dump(mode="json")),
                 "is_valid_json": True,
                 "auth_status": auth_status.value,
             }
@@ -174,7 +173,7 @@ class WebhookIngestionService:
             self.webhook_repo.create(
                 {
                     "source_ip": source_ip,
-                    "http_headers": headers,
+                    "http_headers": redact_sensitive_payload(headers),
                     "raw_body": {"_raw_body_text": "***REDACTED***"},
                     "is_valid_json": False,
                     "auth_status": AuthStatus.MISSING.value,
@@ -210,11 +209,8 @@ class WebhookIngestionService:
             self.webhook_repo.create(
                 {
                     "source_ip": source_ip,
-                    "http_headers": headers,
-                    "raw_body": {
-                        key: ("***REDACTED***" if key == "secret" else value)
-                        for key, value in payload_dict.items()
-                    } if isinstance(payload_dict, dict) else {"payload": "***REDACTED***"},
+                    "http_headers": redact_sensitive_payload(headers),
+                    "raw_body": redact_sensitive_payload(payload_dict) if isinstance(payload_dict, dict) else {"payload": "***REDACTED***"},
                     "is_valid_json": True,
                     "auth_status": AuthStatus.MISSING.value,
                     "error_message": error_message,
