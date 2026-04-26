@@ -115,12 +115,15 @@ Vol: {vol}
 Signal ID: {signal_id}""")
 
     @staticmethod
-    def render_reject_admin(signal: dict, reason: str) -> str:
+    def render_reject_admin(
+        signal: dict, reason: str, reject_code: str | None = None
+    ) -> str:
         side = signal.get("side", "").upper()
         symbol = signal.get("symbol", "UNKNOWN")
         tf = signal.get("timeframe", "UNKNOWN")
         signal_id = signal.get("signal_id", "UNKNOWN")
+        code_line = f"\nRejectCode: {reject_code}" if reject_code else ""
 
-        return MessageRenderer._append_footer(f"""⛔ REJECTED | {symbol} {side} | {tf}
+        return MessageRenderer._append_footer(f"""⛔ REJECTED | {symbol} {side} | {tf}{code_line}
 Reason: {reason}
 Signal ID: {signal_id}""")
