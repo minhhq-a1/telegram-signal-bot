@@ -9,6 +9,7 @@ from sqlalchemy import select, func, case, cast, Date, text
 from app.core.database import get_db
 from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
 from app.api.dependencies import require_dashboard_auth
+from app.services.reject_codes import rule_code_to_reject_code
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
@@ -256,3 +257,81 @@ def get_daily_breakdown(
             daily[day_str][r.decision] = r.cnt
 
     return {"period_days": days, "daily": daily}
+
+
+@router.get("/reject-stats")
+def get_reject_stats(
+    group_by: str = Query(default="", description="Comma-separated: signal_type,reject_code"),
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    """
+    Reject analytics với optional group_by dimensions.
+    group_by=signal_type,reject_code → group by both.
+    group_by=signal_type → group by signal_type only.
+    group_by=reject_code → group by reject_code only.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    if "signal_type" in group_by or "reject_code" in group_by:
+        # Join: signals + signal_decisions (REJECT) + signal_filter_results (FAIL)
+        stmt = (
+            select(
+                Signal.signal_type,
+                SignalFilterResult.rule_code,
+                func.count(SignalFilterResult.id).label("cnt"),
+            )
+            .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+            .join(
+                SignalFilterResult,
+                SignalFilterResult.signal_row_id == Signal.id,
+            )
+            .where(
+                Signal.created_at >= since,
+                SignalDecision.decision == "REJECT",
+                SignalFilterResult.result == "FAIL",
+            )
+            .group_by(Signal.signal_type, SignalFilterResult.rule_code)
+        )
+
+        rows = db.execute(stmt).all()
+        counts: dict[tuple, int] = {}
+        for signal_type, rule_code, cnt in rows:
+            reject_code = rule_code_to_reject_code(rule_code)
+            st = signal_type or "UNKNOWN"
+            rc = reject_code or "UNKNOWN"
+
+            key: tuple
+            if "signal_type" in group_by and "reject_code" in group_by:
+                key = (st, rc)
+            elif "signal_type" in group_by:
+                key = (st,)
+            else:
+                key = (rc,)
+
+            counts[key] = counts.get(key, 0) + cnt
+
+        return {
+            "period_days": days,
+            "group_by": group_by,
+            "buckets": [
+                {
+                    **{k: v for k, v in zip(group_by.split(","), key)},
+                    "count": c,
+                }
+                for key, c in sorted(counts.items())
+            ],
+        }
+
+    # Fallback: simple total rejects
+    total = db.execute(
+        select(func.count(SignalDecision.id))
+        .join(Signal, Signal.id == SignalDecision.signal_row_id)
+        .where(
+            Signal.created_at >= since,
+            SignalDecision.decision == "REJECT",
+        )
+    ).scalar() or 0
+
+    return {"period_days": days, "total_rejects": total, "buckets": []}
