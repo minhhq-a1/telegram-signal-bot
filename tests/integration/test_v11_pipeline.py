@@ -17,17 +17,9 @@ from app.domain.models import Signal, SignalDecision, SignalFilterResult
 from app.api import webhook_controller
 
 
-@pytest.fixture(autouse=True)
-def disable_rate_limiter(monkeypatch):
-    """Disable rate limiting for all E2E tests to avoid IP-based rate limit false positives in CI."""
-    def noop_limit(*_args, **_kwargs):
-        def decorator(f):
-            return f
-        return decorator
-
-    monkeypatch.setattr(webhook_controller.limiter, "limit", noop_limit)
+def _load_payload(payload_name: str) -> dict:
     return json.loads(Path(__file__).parent.parent.parent.joinpath(
-        f"docs/examples/v11_sample_payloads/{name}.json"
+        f"docs/examples/v11_sample_payloads/{payload_name}.json"
     ).read_text())
 
 
@@ -77,6 +69,8 @@ def v11_config():
 
 def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
     """SHORT_SQUEEZE ideal signal → PASS_MAIN"""
+    from app.api import webhook_controller
+
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
         "get_signal_bot_config",
@@ -97,6 +91,8 @@ def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
 
 def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config):
     """SHORT_SQUEEZE squeeze_fired=0 → REJECT"""
+    from app.api import webhook_controller
+
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
         "get_signal_bot_config",
@@ -114,7 +110,6 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
     body = response.json()
     assert body["decision"] == "REJECT"
 
-    # Verify reject_code surfaced in admin message
     from app.domain.models import TelegramMessage
     msgs = db_session.execute(select(TelegramMessage)).scalars().all()
     assert len(msgs) == 1
@@ -123,6 +118,8 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
 
 def test_long_v73_pass_e2e(client, db_session, monkeypatch, v11_config):
     """LONG_V73 ideal signal → PASS_MAIN"""
+    from app.api import webhook_controller
+
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
         "get_signal_bot_config",
