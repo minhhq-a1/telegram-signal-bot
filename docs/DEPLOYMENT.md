@@ -95,7 +95,13 @@ docker-compose up -d db
 ### 3.3 Chạy migration
 
 ```bash
-psql $DATABASE_URL -f migrations/001_init.sql
+python scripts/db/migrate.py apply --database-url "$DATABASE_URL"
+```
+
+Kiểm tra trạng thái:
+
+```bash
+python scripts/db/migrate.py status --database-url "$DATABASE_URL"
 ```
 
 ### 3.4 Chạy app
@@ -233,6 +239,11 @@ Tuần 3+:  Cân nhắc thêm 1m, 12m
 > **Không bật 30S, 45S** — sẽ bị reject server với `UNSUPPORTED_TIMEFRAME`
 
 ---
+
+## 6.1 Migration and recovery runbooks
+
+- Migration/versioning: [DB_MIGRATION_RUNBOOK.md](./DB_MIGRATION_RUNBOOK.md)
+- Backup/recovery: [BACKUP_RECOVERY_RUNBOOK.md](./BACKUP_RECOVERY_RUNBOOK.md)
 
 ## 7. Kiểm tra sau khi deploy
 
