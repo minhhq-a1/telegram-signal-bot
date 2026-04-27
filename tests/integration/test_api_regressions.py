@@ -466,7 +466,7 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_failed_notify)
 
-    # Seed a prior PASS_MAIN signal so cooldown fires → PASS_WARNING
+    # Seed a prior PASS_MAIN signal on DIFFERENT timeframe so SHORT/5m cooldown doesn't fire
     now = datetime.now(timezone.utc)
     prior_webhook_event = WebhookEvent(
         id=str(uuid.uuid4()),
@@ -480,15 +480,14 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
     )
     db_session.add(prior_webhook_event)
     db_session.flush()
-
     prior_signal = Signal(
         id=str(uuid.uuid4()),
         webhook_event_id=prior_webhook_event.id,
-        signal_id="prior-telegram-failure-seed",
+        signal_id="prior-telegram-failure-seed-1m",
         source=valid_payload["source"],
         symbol=valid_payload["symbol"],
-        timeframe=valid_payload["timeframe"],
-        side=valid_payload["signal"].upper(),
+        timeframe="1m",  # Different timeframe → no cooldown for 5m signals
+        side="SHORT",
         price=valid_payload["price"],
         entry_price=valid_payload["metadata"]["entry"],
         stop_loss=valid_payload["metadata"]["stop_loss"],
@@ -506,7 +505,7 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
         id=str(uuid.uuid4()),
         signal_row_id=prior_signal.id,
         decision=DecisionType.PASS_MAIN,
-        decision_reason="seed cooldown trigger",
+        decision_reason="seed isolation 1m",
         telegram_route=TelegramRoute.MAIN,
         created_at=now,
     ))
@@ -519,8 +518,8 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
 
     assert response.status_code == 200
     body = response.json()
-    # Cooldown fires from prior signal → PASS_WARNING
-    assert body["decision"] in ("PASS_MAIN", "PASS_WARNING")
+    # No cooldown (different timeframe) → PASS_MAIN
+    assert body["decision"] == "PASS_MAIN"
 
     signal = db_session.execute(select(Signal).where(Signal.signal_id == "telegram-failure-audit-001")).scalar_one_or_none()
     decision = db_session.execute(select(SignalDecision).where(SignalDecision.signal_row_id == signal.id)).scalar_one_or_none()
