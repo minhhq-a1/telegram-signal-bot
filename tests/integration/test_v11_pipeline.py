@@ -62,7 +62,6 @@ def v11_config():
         "score_pass_threshold": 75,
         "rr_tolerance_pct": 0.10,
         "rr_target_by_type": {"SHORT_SQUEEZE": 2.5, "SHORT_V73": 1.67, "LONG_V73": 1.67},
-        "TRADINGVIEW_SHARED_SECRET": os.environ.get("TRADINGVIEW_SHARED_SECRET", "element-camera-fan"),
     })
     return base
 
@@ -70,6 +69,13 @@ def v11_config():
 def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
     """SHORT_SQUEEZE ideal signal → PASS_MAIN"""
     from app.api import webhook_controller
+
+    # Bypass auth — AuthService reads settings.tradingview_shared_secret which
+    # is loaded from env/.env and cannot be reliably controlled in CI.
+    monkeypatch.setattr(
+        "app.services.auth_service.AuthService.validate_secret",
+        lambda secret: True,
+    )
 
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
@@ -92,6 +98,11 @@ def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
 def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config):
     """SHORT_SQUEEZE squeeze_fired=0 → REJECT"""
     from app.api import webhook_controller
+
+    monkeypatch.setattr(
+        "app.services.auth_service.AuthService.validate_secret",
+        lambda secret: True,
+    )
 
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
@@ -119,6 +130,11 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
 def test_long_v73_pass_e2e(client, db_session, monkeypatch, v11_config):
     """LONG_V73 ideal signal → PASS_MAIN"""
     from app.api import webhook_controller
+
+    monkeypatch.setattr(
+        "app.services.auth_service.AuthService.validate_secret",
+        lambda secret: True,
+    )
 
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
