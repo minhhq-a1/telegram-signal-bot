@@ -17,7 +17,15 @@ from app.domain.models import Signal, SignalDecision, SignalFilterResult
 from app.api import webhook_controller
 
 
-def _load_payload(name: str) -> dict:
+@pytest.fixture(autouse=True)
+def disable_rate_limiter(monkeypatch):
+    """Disable rate limiting for all E2E tests to avoid IP-based rate limit false positives in CI."""
+    def noop_limit(*_args, **_kwargs):
+        def decorator(f):
+            return f
+        return decorator
+
+    monkeypatch.setattr(webhook_controller.limiter, "limit", noop_limit)
     return json.loads(Path(__file__).parent.parent.parent.joinpath(
         f"docs/examples/v11_sample_payloads/{name}.json"
     ).read_text())

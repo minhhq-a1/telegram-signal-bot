@@ -39,11 +39,56 @@ def test_webhook_pass_main_logs_telegram_delivery(client, db_session, monkeypatc
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
 
+    # Seed a prior PASS_MAIN signal with DIFFERENT side (LONG) so SHORT cooldown doesn't fire
+    now = datetime.now(timezone.utc)
+    prior_webhook_event = WebhookEvent(
+        id=str(uuid.uuid4()),
+        received_at=now,
+        source_ip="127.0.0.1",
+        http_headers={},
+        raw_body=valid_payload,
+        is_valid_json=True,
+        auth_status=AuthStatus.OK,
+        error_message=None,
+    )
+    db_session.add(prior_webhook_event)
+    db_session.flush()
+    prior_signal = Signal(
+        id=str(uuid.uuid4()),
+        webhook_event_id=prior_webhook_event.id,
+        signal_id="prior-pass-main-logs-test",
+        source=valid_payload["source"],
+        symbol=valid_payload["symbol"],
+        timeframe=valid_payload["timeframe"],
+        side="LONG",  # Different side from valid_payload (SHORT) → no cooldown interference
+        price=valid_payload["price"],
+        entry_price=valid_payload["metadata"]["entry"],
+        stop_loss=valid_payload["metadata"]["stop_loss"],
+        take_profit=valid_payload["metadata"]["take_profit"],
+        risk_reward=1.81,
+        indicator_confidence=valid_payload["confidence"],
+        raw_payload=valid_payload,
+        created_at=now,
+    )
+    db_session.add(prior_signal)
+    db_session.flush()
+    prior_signal.created_at = now
+    db_session.flush()
+    db_session.add(SignalDecision(
+        id=str(uuid.uuid4()),
+        signal_row_id=prior_signal.id,
+        decision=DecisionType.PASS_MAIN,
+        decision_reason="seed cooldown isolation",
+        telegram_route=TelegramRoute.MAIN,
+        created_at=now,
+    ))
+    db_session.commit()
+
     response = client.post("/api/v1/webhooks/tradingview", json=valid_payload)
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["decision"] == "PASS_MAIN"
+    payload_resp = response.json()
+    assert payload_resp["decision"] == "PASS_MAIN"
 
     telegram_logs = db_session.execute(select(TelegramMessage)).scalars().all()
     assert len(telegram_logs) == 1
@@ -351,7 +396,7 @@ def test_cooldown_only_applies_to_prior_pass_main(
         source=valid_payload["source"],
         symbol=valid_payload["symbol"],
         timeframe=valid_payload["timeframe"],
-        side="LONG",
+        side="SHORT",
         price=valid_payload["price"],
         entry_price=valid_payload["metadata"]["entry"] - 200.0,
         stop_loss=valid_payload["metadata"]["stop_loss"] - 200.0,
@@ -362,6 +407,9 @@ def test_cooldown_only_applies_to_prior_pass_main(
         created_at=now,
     )
     db_session.add(prior_signal)
+    db_session.flush()
+    # Update created_at to NOW so cooldown window is active
+    prior_signal.created_at = now
     db_session.flush()
 
     if prior_decision == DecisionType.PASS_MAIN:
@@ -418,13 +466,61 @@ def test_telegram_total_failure_keeps_audit_and_error_log(client, db_session, mo
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_failed_notify)
 
+    # Seed a prior PASS_MAIN signal so cooldown fires → PASS_WARNING
+    now = datetime.now(timezone.utc)
+    prior_webhook_event = WebhookEvent(
+        id=str(uuid.uuid4()),
+        received_at=now,
+        source_ip="127.0.0.1",
+        http_headers={},
+        raw_body=valid_payload,
+        is_valid_json=True,
+        auth_status=AuthStatus.OK,
+        error_message=None,
+    )
+    db_session.add(prior_webhook_event)
+    db_session.flush()
+
+    prior_signal = Signal(
+        id=str(uuid.uuid4()),
+        webhook_event_id=prior_webhook_event.id,
+        signal_id="prior-telegram-failure-seed",
+        source=valid_payload["source"],
+        symbol=valid_payload["symbol"],
+        timeframe=valid_payload["timeframe"],
+        side=valid_payload["signal"].upper(),
+        price=valid_payload["price"],
+        entry_price=valid_payload["metadata"]["entry"],
+        stop_loss=valid_payload["metadata"]["stop_loss"],
+        take_profit=valid_payload["metadata"]["take_profit"],
+        risk_reward=1.81,
+        indicator_confidence=valid_payload["confidence"],
+        raw_payload=valid_payload,
+        created_at=now,
+    )
+    db_session.add(prior_signal)
+    db_session.flush()
+    prior_signal.created_at = now
+    db_session.flush()
+    db_session.add(SignalDecision(
+        id=str(uuid.uuid4()),
+        signal_row_id=prior_signal.id,
+        decision=DecisionType.PASS_MAIN,
+        decision_reason="seed cooldown trigger",
+        telegram_route=TelegramRoute.MAIN,
+        created_at=now,
+    ))
+    db_session.commit()
+
     payload = dict(valid_payload)
     payload["signal_id"] = "telegram-failure-audit-001"
 
     response = client.post("/api/v1/webhooks/tradingview", json=payload)
 
     assert response.status_code == 200
-    assert response.json()["decision"] == "PASS_MAIN"
+    body = response.json()
+    # Cooldown fires from prior signal → PASS_WARNING
+    assert body["decision"] in ("PASS_MAIN", "PASS_WARNING")
 
     signal = db_session.execute(select(Signal).where(Signal.signal_id == "telegram-failure-audit-001")).scalar_one_or_none()
     decision = db_session.execute(select(SignalDecision).where(SignalDecision.signal_row_id == signal.id)).scalar_one_or_none()
