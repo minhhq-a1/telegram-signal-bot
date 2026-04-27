@@ -46,6 +46,12 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      # Remove any lingering .env file so CI env vars take priority over it.
+      # GitHub Actions runners reuse the working directory between runs,
+      # so a .env file from a previous run could override TRADINGVIEW_SHARED_SECRET.
+      - name: Remove leftover .env file
+        run: rm -f .env
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
