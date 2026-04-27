@@ -45,6 +45,7 @@ class SignalMetadata(BaseModel):
     squeeze_on: int | None = None
     squeeze_fired: int | None = None
     squeeze_bars: int | None = None
+    mom_direction: int | None = None
     
     # Metadata
     strategy_name: str | None = None

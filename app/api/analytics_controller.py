@@ -275,27 +275,52 @@ def get_reject_stats(
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
     if "signal_type" in group_by or "reject_code" in group_by:
-        # Join: signals + signal_decisions (REJECT) + signal_filter_results (FAIL)
-        stmt = (
+        # Deduplicate: each REJECT signal counted once, pick primary FAIL by severity.
+        # Approach: subquery finds the most severe FAIL per signal, then aggregate.
+        # Severity order: CRITICAL=0, HIGH=1, MEDIUM=2, LOW=3 (Pydantic enums start at 0)
+        from sqlalchemy import literal_column
+
+        # Subquery: most severe FAIL rule_code per REJECT signal
+        severity_order = case(
+            (SignalFilterResult.severity == text("'CRITICAL'"), 0),
+            (SignalFilterResult.severity == text("'HIGH'"), 1),
+            (SignalFilterResult.severity == text("'MEDIUM'"), 2),
+            (SignalFilterResult.severity == text("'LOW'"), 3),
+            else_=4,
+        )
+
+        # Get the most severe FAIL rule per signal (one row per signal)
+        primary_fail_subq = (
             select(
-                Signal.signal_type,
+                SignalFilterResult.signal_row_id,
                 SignalFilterResult.rule_code,
-                func.count(SignalFilterResult.id).label("cnt"),
             )
-            .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
-            .join(
-                SignalFilterResult,
-                SignalFilterResult.signal_row_id == Signal.id,
-            )
+            .join(SignalDecision, SignalDecision.signal_row_id == SignalFilterResult.signal_row_id)
             .where(
-                Signal.created_at >= since,
                 SignalDecision.decision == "REJECT",
                 SignalFilterResult.result == "FAIL",
             )
-            .group_by(Signal.signal_type, SignalFilterResult.rule_code)
+            .order_by(SignalFilterResult.signal_row_id, severity_order)
+            .distinct(SignalFilterResult.signal_row_id)
+        ).subquery()
+
+        # Join signals with primary FAIL and aggregate
+        reject_rows = (
+            select(
+                Signal.signal_type,
+                primary_fail_subq.c.rule_code,
+                func.count().label("cnt"),
+            )
+            .join(primary_fail_subq, primary_fail_subq.c.signal_row_id == Signal.id)
+            .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+            .where(
+                Signal.created_at >= since,
+                SignalDecision.decision == "REJECT",
+            )
+            .group_by(Signal.signal_type, primary_fail_subq.c.rule_code)
         )
 
-        rows = db.execute(stmt).all()
+        rows = db.execute(reject_rows).all()
         counts: dict[tuple, int] = {}
         for signal_type, rule_code, cnt in rows:
             reject_code = rule_code_to_reject_code(rule_code)

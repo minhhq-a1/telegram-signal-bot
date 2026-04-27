@@ -370,9 +370,14 @@ class FilterEngine:
         - Pilot mode: score < threshold → WARN MEDIUM (không FAIL)
         - Score >= threshold → PASS
         - Skip if 'rescoring' not in config (backward compat for existing tests)
+        - Skip if signal_type not in rescoring config (legacy/partial payload)
         """
         if "rescoring" not in self.config:
             return  # V1.0 config — skip backend scoring
+
+        signal_type = signal.get("signal_type")
+        if signal_type not in self.config.get("rescoring", {}):
+            return  # Unknown signal_type — skip backend scoring
 
         from app.services.rescoring_engine import rescore
 

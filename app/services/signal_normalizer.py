@@ -72,6 +72,7 @@ class SignalNormalizer:
             "squeeze_on": payload.metadata.squeeze_on if payload.metadata else None,
             "squeeze_fired": payload.metadata.squeeze_fired if payload.metadata else None,
             "squeeze_bars": payload.metadata.squeeze_bars if payload.metadata else None,
+            "mom_direction": payload.metadata.mom_direction if payload.metadata else None,
             
             # Timestamps
             "payload_timestamp": payload.timestamp,
