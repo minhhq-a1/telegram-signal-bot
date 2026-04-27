@@ -65,6 +65,7 @@ class Signal(Base):
     decision: Mapped["SignalDecision"] = relationship(back_populates="signal")
     telegram_messages: Mapped[List["TelegramMessage"]] = relationship(back_populates="signal")
     outcomes: Mapped[List["SignalOutcome"]] = relationship(back_populates="signal")
+    reverify_results: Mapped[List["SignalReverifyResult"]] = relationship(back_populates="signal"))
 
 class SignalFilterResult(Base):
     __tablename__ = "signal_filter_results"
@@ -130,6 +131,25 @@ class SystemConfig(Base):
     config_value: Mapped[dict] = mapped_column(JSON)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+class SignalReverifyResult(Base):
+    __tablename__ = "signal_reverify_results"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    signal_row_id: Mapped[str] = mapped_column(ForeignKey("signals.id", ondelete="CASCADE"), nullable=False)
+    original_decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    reverify_decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    reverify_score: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    reject_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    score_items: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    filter_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    signal: Mapped["Signal"] = relationship(back_populates="reverify_results")
+
 
 class MarketEvent(Base):
     __tablename__ = "market_events"
