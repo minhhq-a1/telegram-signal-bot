@@ -94,7 +94,7 @@ def valid_payload() -> dict:
             "vol_regime": "BREAKOUT_IMMINENT",
             "squeeze_fired": 1,
             "mom_direction": -1,
-            "rsi": 31.2,
+            "rsi": 45.0,
             "rsi_slope": -5.0,
             "kc_position": 0.30,
             "atr_pct": 0.264,

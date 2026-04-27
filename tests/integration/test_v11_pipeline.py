@@ -7,6 +7,7 @@ Requires: INTEGRATION_DATABASE_URL environment variable set.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import pytest
 from sqlalchemy import select
@@ -24,17 +25,12 @@ def _load_payload(name: str) -> dict:
 
 @pytest.fixture
 def v11_config():
-    return {
-        "allowed_symbols": ["BTCUSDT"],
-        "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m", "30m", "1h"],
+    # Merge V1.1 config với existing defaults để giữ secret/auth config
+    from app.repositories.config_repo import ConfigRepository
+
+    base = ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG.copy()
+    base.update({
         "confidence_thresholds": {"15m": 0.74},
-        "cooldown_minutes": {"15m": 25},
-        "rr_min_base": 1.5,
-        "rr_min_squeeze": 2.0,
-        "duplicate_price_tolerance_pct": 0.002,
-        "news_block_before_min": 15,
-        "news_block_after_min": 30,
-        "log_reject_to_admin": True,
         "strategy_thresholds": {
             "SHORT_SQUEEZE": {"rsi_min": 35, "rsi_slope_max": -2, "kc_position_max": 0.55, "atr_pct_min": 0.20},
             "SHORT_V73": {"rsi_min": 60, "stoch_k_min": 70},
@@ -66,7 +62,9 @@ def v11_config():
         "score_pass_threshold": 75,
         "rr_tolerance_pct": 0.10,
         "rr_target_by_type": {"SHORT_SQUEEZE": 2.5, "SHORT_V73": 1.67, "LONG_V73": 1.67},
-    }
+        "TRADINGVIEW_SHARED_SECRET": os.environ.get("TRADINGVIEW_SHARED_SECRET", "element-camera-fan"),
+    })
+    return base
 
 
 def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):

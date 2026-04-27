@@ -34,6 +34,7 @@ jobs:
 
     env:
       INTEGRATION_DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
+      TRADINGVIEW_SHARED_SECRET: element-camera-fan
 
     steps:
       - name: Checkout repository
