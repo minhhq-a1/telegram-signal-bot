@@ -18,7 +18,12 @@ CREATE TABLE IF NOT EXISTS signal_reverify_results (
 CREATE INDEX IF NOT EXISTS idx_signal_reverify_signal_row_id
     ON signal_reverify_results(signal_row_id, created_at DESC);
 
--- 2. Seed V1.1 config keys vào DB (deep-merge với existing config)
+-- 3. Add mom_direction to persisted signals.
+-- Pine sends int (-1/0/1); nullable keeps backward compatibility for old rows.
+ALTER TABLE signals
+    ADD COLUMN IF NOT EXISTS mom_direction INTEGER;
+
+-- 4. Seed V1.1 config keys vào DB (deep-merge với existing config)
 -- Chỉ thêm keys mới, không ghi đè keys cũ
 -- Idempotent: chỉ thêm nếu 'strategy_thresholds' chưa tồn tại
 UPDATE system_configs

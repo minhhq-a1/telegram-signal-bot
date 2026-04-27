@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List
-from sqlalchemy import String, Numeric, DateTime, JSON, ForeignKey
+from sqlalchemy import String, Numeric, DateTime, JSON, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.core.enums import SignalSide, DecisionType, RuleResult, RuleSeverity, DeliveryStatus, TelegramRoute, AuthStatus
@@ -55,6 +55,7 @@ class Signal(Base):
     squeeze_on: Mapped[bool | None] = mapped_column(nullable=True)
     squeeze_fired: Mapped[bool | None] = mapped_column(nullable=True)
     squeeze_bars: Mapped[int | None] = mapped_column(nullable=True)
+    mom_direction: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payload_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bar_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_payload: Mapped[dict] = mapped_column(JSON)
