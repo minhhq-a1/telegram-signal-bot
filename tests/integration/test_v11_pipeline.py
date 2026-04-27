@@ -82,7 +82,7 @@ def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
 
-    payload = _load_payload("short_squeeze_pass.json")
+    payload = _load_payload("short_squeeze_pass")
     response = client.post("/api/v1/webhooks/tradingview", json=payload)
     assert response.status_code == 200
     body = response.json()
@@ -102,7 +102,7 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
 
-    payload = _load_payload("short_squeeze_fail_not_fired.json")
+    payload = _load_payload("short_squeeze_fail_not_fired")
     response = client.post("/api/v1/webhooks/tradingview", json=payload)
     assert response.status_code == 200
     body = response.json()
@@ -128,7 +128,7 @@ def test_long_v73_pass_e2e(client, db_session, monkeypatch, v11_config):
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
 
-    payload = _load_payload("long_v73_pass.json")
+    payload = _load_payload("long_v73_pass")
     response = client.post("/api/v1/webhooks/tradingview", json=payload)
     assert response.status_code == 200
     body = response.json()

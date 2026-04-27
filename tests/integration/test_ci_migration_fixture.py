@@ -29,6 +29,7 @@ def test_db_fixture_tracks_versioned_migrations(db_session):
     assert rows == [
         ("001", "001_init.sql"),
         ("002", "002_add_ops_migration_baseline.sql"),
+        ("003", "003_v11_upgrade.sql"),
     ]
 
 
