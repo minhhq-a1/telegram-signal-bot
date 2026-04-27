@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 import psycopg
 from psycopg import sql
@@ -10,6 +11,7 @@ from psycopg import sql
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MIGRATIONS_DIR = ROOT / "migrations"
 SCHEMA_MIGRATIONS_TABLE = "schema_migrations"
+MIGRATION_ADVISORY_LOCK_KEY: Final[int] = 1945035530
 
 
 @dataclass(frozen=True)
@@ -82,23 +84,39 @@ def apply_migration(conn: psycopg.Connection, migration: Migration) -> None:
             )
 
 
+def acquire_migration_lock(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_ADVISORY_LOCK_KEY,))
+
+
+def release_migration_lock(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_unlock(%s)", (MIGRATION_ADVISORY_LOCK_KEY,))
+
+
+
 def apply_migrations_to_url(database_url: str, migrations_dir: Path = DEFAULT_MIGRATIONS_DIR) -> list[str]:
     applied_now: list[str] = []
     migrations = load_migrations(migrations_dir)
     with psycopg.connect(normalize_database_url(database_url), autocommit=False) as conn:
-        ensure_schema_migrations_table(conn)
-        applied = fetch_applied_migrations(conn)
-        for migration in migrations:
-            if migration.version in applied:
-                applied_filename, applied_checksum = applied[migration.version]
-                if applied_checksum != migration.checksum:
-                    raise RuntimeError(
-                        f"Checksum mismatch for version {migration.version}: "
-                        f"db has {applied_filename} / {applied_checksum}, file has {migration.filename} / {migration.checksum}"
-                    )
-                continue
-            apply_migration(conn, migration)
-            applied_now.append(f"{migration.version} {migration.filename}")
+        acquire_migration_lock(conn)
+        try:
+            ensure_schema_migrations_table(conn)
+            applied = fetch_applied_migrations(conn)
+            for migration in migrations:
+                if migration.version in applied:
+                    applied_filename, applied_checksum = applied[migration.version]
+                    if applied_checksum != migration.checksum:
+                        raise RuntimeError(
+                            f"Checksum mismatch for version {migration.version}: "
+                            f"db has {applied_filename} / {applied_checksum}, file has {migration.filename} / {migration.checksum}"
+                        )
+                    continue
+                apply_migration(conn, migration)
+                applied_now.append(f"{migration.version} {migration.filename}")
+        finally:
+            release_migration_lock(conn)
+            conn.commit()
     return applied_now
 
 

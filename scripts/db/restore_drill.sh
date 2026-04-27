@@ -63,12 +63,13 @@ pg_dump -Fc -d "$SOURCE_URL" -f /tmp/restore_drill.dump
 psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${RESTORE_DB}" >/dev/null
 pg_restore -d "$RESTORE_URL" /tmp/restore_drill.dump >/dev/null
 
+EXPECTED_SCHEMA_COUNT=$(find "$ROOT_DIR/migrations" -maxdepth 1 -type f -name '[0-9][0-9][0-9]_*.sql' | wc -l | tr -d ' ')
 SCHEMA_COUNT=$(psql "$RESTORE_URL" -At -c "SELECT count(*) FROM schema_migrations")
 CONFIG_ROW=$(psql "$RESTORE_URL" -At -c "SELECT config_value->>'migration_strategy' FROM system_configs WHERE config_key = 'db_ops_baseline'")
 EVENT_ROW=$(psql "$RESTORE_URL" -At -c "SELECT count(*) FROM webhook_events WHERE id = 'restore-drill-event-001'")
 
-if [[ "$SCHEMA_COUNT" != "2" ]]; then
-  echo "Restore drill failed: expected 2 schema_migrations rows, got ${SCHEMA_COUNT}" >&2
+if [[ "$SCHEMA_COUNT" != "$EXPECTED_SCHEMA_COUNT" ]]; then
+  echo "Restore drill failed: expected ${EXPECTED_SCHEMA_COUNT} schema_migrations rows, got ${SCHEMA_COUNT}" >&2
   exit 1
 fi
 
@@ -85,6 +86,6 @@ fi
 echo "restore drill ok"
 echo "- source db: ${SOURCE_DB}"
 echo "- restored db: ${RESTORE_DB}"
-echo "- schema_migrations rows: ${SCHEMA_COUNT}"
+echo "- schema_migrations rows: ${SCHEMA_COUNT}/${EXPECTED_SCHEMA_COUNT}"
 echo "- db_ops_baseline.migration_strategy: ${CONFIG_ROW}"
 echo "- restored webhook_events rows: ${EVENT_ROW}"
