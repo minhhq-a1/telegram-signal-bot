@@ -65,7 +65,7 @@ class Signal(Base):
     decision: Mapped["SignalDecision"] = relationship(back_populates="signal")
     telegram_messages: Mapped[List["TelegramMessage"]] = relationship(back_populates="signal")
     outcomes: Mapped[List["SignalOutcome"]] = relationship(back_populates="signal")
-    reverify_results: Mapped[List["SignalReverifyResult"]] = relationship(back_populates="signal"))
+    reverify_results: Mapped[List["SignalReverifyResult"]] = relationship(back_populates="signal")
 
 class SignalFilterResult(Base):
     __tablename__ = "signal_filter_results"
