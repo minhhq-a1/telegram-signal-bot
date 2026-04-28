@@ -280,12 +280,14 @@ class WebhookIngestionService:
         response = None
         error_detail = None
         try:
+            logger.info("before_notify_call", extra={"notifier_type": type(self.notifier).__name__})
             status, response, error_detail = await self.notifier.notify(
                 notification_job.route,
                 notification_job.message_text,
             )
+            logger.info("after_notify_call", extra={"status": str(status), "response": str(response)[:100]})
         except Exception as e:
-            logger.warning("telegram_notify_raised", extra={"error": str(e)})
+            logger.warning("telegram_notify_raised", extra={"error": str(e), "error_type": type(e).__name__})
         finally:
             pass  # status/response captured above even on exception
 
