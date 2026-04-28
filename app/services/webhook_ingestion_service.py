@@ -158,6 +158,12 @@ class WebhookIngestionService:
         )
 
         notification_job = self._build_notification_job(norm_data, signal_obj.id, filter_result, config)
+        logger.info("debug_config_check", extra={
+            "signal_id": payload.signal_id,
+            "has_rescoring": "rescoring" in config,
+            "log_reject_to_admin": config.get("log_reject_to_admin"),
+            "rescoring_keys": list(config.get("rescoring", {}).keys()),
+        })
         self.db.commit()
         return self._accepted_result(payload.signal_id, filter_result.final_decision, notification_job)
 

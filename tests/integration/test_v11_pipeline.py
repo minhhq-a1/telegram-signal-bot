@@ -106,11 +106,16 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
     """SHORT_SQUEEZE squeeze_fired=0 → REJECT"""
     from app.api import webhook_controller
 
+    # Verify v11_config fixture has required keys
+    assert v11_config.get("log_reject_to_admin") is True, f"v11_config missing log_reject_to_admin: {v11_config}"
+    assert "rescoring" in v11_config, f"v11_config missing rescoring: {v11_config}"
+
     monkeypatch.setattr(
         "app.services.auth_service.AuthService.validate_secret",
         lambda secret: True,
     )
 
+    # Patch at class level so the service's instance call uses our config
     monkeypatch.setattr(
         webhook_controller.ConfigRepository,
         "get_signal_bot_config",
