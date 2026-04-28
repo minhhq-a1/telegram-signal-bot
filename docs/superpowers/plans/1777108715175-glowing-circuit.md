@@ -156,7 +156,7 @@ Files cần sửa:
 - `app/services/signal_normalizer.py`
 - `app/domain/models.py`
 - `app/repositories/signal_repo.py`
-- `migrations/002_v11_upgrade.sql`
+- `migrations/003_v11_upgrade.sql`
 - tests liên quan đến normalizer / webhook payload
 
 Thêm vào `SignalMetadata`:
@@ -194,9 +194,9 @@ Thêm regression tests tối thiểu:
 ./.venv/bin/python -m pytest tests/unit/test_config_repo.py -v
 ```
 
-### Step 0.4: Tạo `migrations/002_v11_upgrade.sql`
+### Step 0.4: Tạo `migrations/003_v11_upgrade.sql`
 
-Tạo file `migrations/002_v11_upgrade.sql`:
+Tạo file `migrations/003_v11_upgrade.sql`:
 
 ```sql
 -- Migration 002: v1.1 Upgrade — Reverify table + config defaults
@@ -293,7 +293,7 @@ WHERE config_key = 'signal_bot_config'
 ### Step 0.5: Commit
 
 ```bash
-git add migrations/002_v11_upgrade.sql app/repositories/config_repo.py app/domain/schemas.py app/services/signal_normalizer.py app/domain/models.py app/repositories/signal_repo.py
+git add migrations/003_v11_upgrade.sql app/repositories/config_repo.py app/domain/schemas.py app/services/signal_normalizer.py app/domain/models.py app/repositories/signal_repo.py
 git commit -m "config: add v1.1 defaults and mom_direction plumbing"
 ```
 
@@ -1601,7 +1601,7 @@ class ReverifyRepository:
 ### Step 7.3: Apply migration local (dev only)
 
 ```bash
-PGPASSWORD=postgres psql -h localhost -U postgres -d signal_bot -f migrations/002_v11_upgrade.sql
+PGPASSWORD=postgres psql -h localhost -U postgres -d signal_bot -f migrations/003_v11_upgrade.sql
 ```
 
 ### Step 7.4: Commit
@@ -2310,7 +2310,7 @@ Mong đợi: ~100 tests. Sau V1.1: ~130+ tests (thêm ~30 tests mới).
 | AC-7 | Reject stats group_by hoạt động | `test_reject_stats_groups_by_signal_type_and_code` |
 | AC-8 | Admin message có reject_code | `test_render_reject_admin_includes_reject_code` |
 | AC-9 | Existing V1.0 tests không regression | `./.venv/bin/python -m pytest tests/unit tests/integration/test_api_regressions.py -v` |
-| AC-10 | Migration idempotent | Chạy lại `002_v11_upgrade.sql` — không error |
+| AC-10 | Migration idempotent | Chạy lại `003_v11_upgrade.sql` — không error |
 
 ---
 
