@@ -244,7 +244,16 @@ class WebhookIngestionService:
             msg_text = MessageRenderer.render_warning(norm_data, filter_result.server_score, reason_str)
             route_to_send = TelegramRoute.WARN
         elif filter_result.final_decision == DecisionType.REJECT and config.get("log_reject_to_admin"):
-            msg_text = MessageRenderer.render_reject_admin(norm_data, filter_result.decision_reason)
+            from app.services.reject_codes import rule_code_to_reject_code
+
+            first_fail = next(
+                (r for r in filter_result.filter_results if r.result.value == "FAIL"),
+                None,
+            )
+            reject_code = rule_code_to_reject_code(first_fail.rule_code) if first_fail else None
+            msg_text = MessageRenderer.render_reject_admin(
+                norm_data, filter_result.decision_reason, reject_code=reject_code
+            )
             route_to_send = TelegramRoute.ADMIN
 
         if not msg_text or not route_to_send:
@@ -257,22 +266,40 @@ class WebhookIngestionService:
         )
 
     async def deliver_notification(self, notification_job: NotificationJob) -> None:
-        status, response, error_detail = await self.notifier.notify(
-            notification_job.route,
-            notification_job.message_text,
-        )
+        status: str | None = None
+        response: dict | None = None
+        error_detail: str | None = None
+
+        try:
+            status, response, error_detail = await self.notifier.notify(
+                notification_job.route,
+                notification_job.message_text,
+            )
+        except Exception as e:
+            # Always log to audit even if Telegram call fails.
+            # Set FAILED status so the row satisfies the DB constraint.
+            error_detail = f"{type(e).__name__}: {e}"
+            status = DeliveryStatus.FAILED.value
+            logger.warning(
+                "telegram_notify_raised",
+                extra={"signal_row_id": notification_job.signal_row_id, "error": str(e)},
+            )
 
         db = self.background_session_factory()
         try:
             telegram_repo = self.telegram_repo_cls(db)
             chat_id = self.notifier.resolve_chat_id(notification_job.route) or "N/A"
-            status_value = status if isinstance(status, str) else status.value
+            status_value: str = status if isinstance(status, str) else (
+                status.value if status else DeliveryStatus.FAILED.value
+            )
             sent_at = datetime.now(timezone.utc) if status_value == DeliveryStatus.SENT.value else None
 
             telegram_message_id = None
             if response:
                 telegram_message_id = str(
-                    response.get("_telegram_message_id") or response.get("result", {}).get("message_id") or ""
+                    response.get("_telegram_message_id")
+                    or response.get("result", {}).get("message_id")
+                    or ""
                 )
                 if telegram_message_id == "":
                     telegram_message_id = None
@@ -290,6 +317,10 @@ class WebhookIngestionService:
                 }
             )
             db.commit()
+            logger.info(
+                "telegram_message_log_created",
+                extra={"signal_row_id": notification_job.signal_row_id, "status": status_value},
+            )
         except Exception:
             db.rollback()
             logger.exception(

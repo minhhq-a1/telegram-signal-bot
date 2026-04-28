@@ -27,9 +27,13 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _reset_db_with_migration(engine) -> None:
+    # DROP SCHEMA clears all tables but the migration runner re-creates schema_migrations.
+    # We also explicitly drop schema_migrations to ensure clean state in CI container reuse.
     with engine.begin() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
+        # Ensure schema_migrations is also gone so migration runner re-creates it clean
+        conn.execute(text("DROP TABLE IF EXISTS schema_migrations CASCADE"))
     apply_migrations_to_url(INTEGRATION_DATABASE_URL)
 
 
@@ -71,8 +75,8 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 def valid_payload() -> dict:
     return {
         "secret": "test-secret",
-        "signal_id": "tv-btcusdt-5m-1713452400000-long-long_v73",
-        "signal": "long",
+        "signal_id": "tv-btcusdt-5m-1713452400000-short-squeeze",
+        "signal": "short",
         "symbol": "BTCUSDT",
         "timeframe": "5m",
         "timestamp": "2026-04-18T15:30:00Z",
@@ -82,16 +86,22 @@ def valid_payload() -> dict:
         "confidence": 0.82,
         "metadata": {
             "entry": 68250.5,
-            "stop_loss": 67980.0,
-            "take_profit": 68740.0,
-            "signal_type": "LONG_V73",
+            "stop_loss": 68650.0,
+            "take_profit": 67000.0,
+            "signal_type": "SHORT_SQUEEZE",
+            "strategy": "KELTNER_SQUEEZE",
             "regime": "WEAK_TREND_DOWN",
-            "vol_regime": "TRENDING_LOW_VOL",
-            "rsi": 31.2,
-            "stoch_k": 12.8,
+            "vol_regime": "BREAKOUT_IMMINENT",
+            "squeeze_fired": 1,
+            "mom_direction": -1,
+            "rsi": 45.0,
+            "rsi_slope": -5.0,
+            "kc_position": 0.30,
+            "atr_pct": 0.264,
+            "atr_percentile": 65.0,
             "adx": 21.4,
             "atr": 180.3,
-            "atr_pct": 0.264,
+            "stoch_k": 12.8,
             "vol_ratio": 1.24,
             "bar_confirmed": True,
         },

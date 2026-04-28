@@ -9,6 +9,9 @@ from sqlalchemy import select, func, case, cast, Date, text
 from app.core.database import get_db
 from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
 from app.api.dependencies import require_dashboard_auth
+from app.services.reject_codes import rule_code_to_reject_code
+
+_ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
@@ -256,3 +259,97 @@ def get_daily_breakdown(
             daily[day_str][r.decision] = r.cnt
 
     return {"period_days": days, "daily": daily}
+
+
+@router.get("/reject-stats")
+def get_reject_stats(
+    group_by: str = Query(default="", description="Comma-separated: signal_type,reject_code"),
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    """
+    Reject analytics với optional group_by dimensions.
+    group_by=signal_type,reject_code → group by both.
+    group_by=signal_type → group by signal_type only.
+    group_by=reject_code → group by reject_code only.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # Parse tokens in caller order, validate against whitelist
+    tokens = [t.strip() for t in group_by.split(",") if t.strip()]
+    valid_tokens = [t for t in tokens if t in _ALLOWED_GROUP_BY]
+    if not valid_tokens:
+        # Fallback: simple total rejects
+        total = db.execute(
+            select(func.count(SignalDecision.id))
+            .join(Signal, Signal.id == SignalDecision.signal_row_id)
+            .where(
+                Signal.created_at >= since,
+                SignalDecision.decision == "REJECT",
+            )
+        ).scalar() or 0
+        return {"period_days": days, "total_rejects": total, "buckets": []}
+
+    # Deduplicate: each REJECT signal counted once, pick primary FAIL by severity.
+    # Severity order: CRITICAL=0, HIGH=1, MEDIUM=2, LOW=3
+    severity_order = case(
+        (SignalFilterResult.severity == text("'CRITICAL'"), 0),
+        (SignalFilterResult.severity == text("'HIGH'"), 1),
+        (SignalFilterResult.severity == text("'MEDIUM'"), 2),
+        (SignalFilterResult.severity == text("'LOW'"), 3),
+        else_=4,
+    )
+
+    # Subquery: most severe FAIL rule_code per REJECT signal
+    primary_fail_subq = (
+        select(
+            SignalFilterResult.signal_row_id,
+            SignalFilterResult.rule_code,
+        )
+        .join(SignalDecision, SignalDecision.signal_row_id == SignalFilterResult.signal_row_id)
+        .where(
+            SignalDecision.decision == "REJECT",
+            SignalFilterResult.result == "FAIL",
+        )
+        .order_by(SignalFilterResult.signal_row_id, severity_order)
+        .distinct(SignalFilterResult.signal_row_id)
+    ).subquery()
+
+    # Join signals with primary FAIL and aggregate
+    reject_rows = (
+        select(
+            Signal.signal_type,
+            primary_fail_subq.c.rule_code,
+            func.count().label("cnt"),
+        )
+        .join(primary_fail_subq, primary_fail_subq.c.signal_row_id == Signal.id)
+        .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(
+            Signal.created_at >= since,
+            SignalDecision.decision == "REJECT",
+        )
+        .group_by(Signal.signal_type, primary_fail_subq.c.rule_code)
+    )
+
+    rows = db.execute(reject_rows).all()
+
+    # Build buckets using the EXACT token order from the caller
+    counts: dict[tuple, int] = {}
+    for signal_type, rule_code, cnt in rows:
+        reject_code = rule_code_to_reject_code(rule_code)
+        st = signal_type or "UNKNOWN"
+        rc = reject_code or "UNKNOWN"
+
+        # Build key in caller token order
+        key = tuple(st if t == "signal_type" else rc for t in valid_tokens)
+        counts[key] = counts.get(key, 0) + cnt
+
+    return {
+        "period_days": days,
+        "group_by": ",".join(valid_tokens),
+        "buckets": [
+            {**{t: v for t, v in zip(valid_tokens, key)}, "count": c}
+            for key, c in sorted(counts.items())
+        ],
+    }

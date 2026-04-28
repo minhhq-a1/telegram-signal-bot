@@ -45,6 +45,11 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      # Remove any lingering .env file so it cannot shadow CI env vars.
+      # GitHub Actions runners reuse the working directory between runs.
+      - name: Remove leftover .env file
+        run: rm -f .env
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
@@ -96,6 +101,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
+
+      - name: Remove leftover .env file
+        run: rm -f .env
 
       - name: Install dependencies
         run: pip install -r requirements.txt

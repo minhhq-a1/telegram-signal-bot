@@ -456,7 +456,7 @@ ROUTE_REJECT
   },
   "rr_min_base": 1.5,
   "rr_min_squeeze": 2.0,
-  "duplicate_price_tolerance_pct": 0.2,
+  "duplicate_price_tolerance_pct": 0.002,
   "news_block_before_min": 15,
   "news_block_after_min": 30,
   "log_reject_to_admin": true
@@ -467,7 +467,146 @@ ROUTE_REJECT
 
 ---
 
-## 9. Rủi ro đã biết
+## 9. V1.1 — Strategy-Specific Rules (Pilot Mode)
+
+### 9.1 — Routing Policy
+
+**Boolean gate vẫn giữ nguyên.** `server_score` chỉ dùng cho analytics, không dùng để route. `BACKEND_SCORE_THRESHOLD` trong pilot mode trả về WARN, không FAIL.
+
+### 9.2 — Phase 2.5: Strategy Validation (sau Phase 2 Trade Math)
+
+**Pilot rule severity policy:**
+- `HIGH` severity → `FAIL` → REJECT
+- `MEDIUM` severity → `WARN` → PASS_WARNING
+- `INFO` severity → `PASS` → không ảnh hưởng route
+
+#### SHORT_SQUEEZE — Phase 2.5
+
+| Rule | Severity | Result | Pilot Action |
+|---|---|---|---|
+| `SQ_NO_FIRED` | HIGH | FAIL | REJECT |
+| `SQ_BAD_MOM_DIRECTION` | HIGH | FAIL | REJECT |
+| `SQ_BAD_VOL_REGIME` | HIGH | FAIL | REJECT |
+| `SQ_BAD_STRATEGY_NAME` | HIGH | FAIL | REJECT |
+| `SQ_RSI_FLOOR` | MEDIUM | WARN | → PASS_WARNING |
+| `SQ_KC_POSITION_FLOOR` | MEDIUM | WARN | → PASS_WARNING |
+
+**Logic chi tiết:**
+- `SQ_NO_FIRED`: `squeeze_fired in (0, False)` → FAIL
+- `SQ_BAD_MOM_DIRECTION`: `mom_direction != -1` → FAIL (Pine gửi int -1/0/1)
+- `SQ_BAD_VOL_REGIME`: `vol_regime != "BREAKOUT_IMMINENT"` → FAIL
+- `SQ_BAD_STRATEGY_NAME`: `strategy != "KELTNER_SQUEEZE"` → FAIL
+- `SQ_RSI_FLOOR`: `rsi < rsi_min (35)` → WARN
+- `SQ_KC_POSITION_FLOOR`: `kc_position > kc_position_max (0.55)` → WARN
+
+#### SHORT_V73 — Phase 2.5
+
+| Rule | Severity | Result | Pilot Action |
+|---|---|---|---|
+| `S_BASE_BAD_STRATEGY_NAME` | HIGH | FAIL | REJECT |
+| `S_BASE_RSI_FLOOR` | MEDIUM | WARN | → PASS_WARNING |
+| `S_BASE_STOCH_FLOOR` | MEDIUM | WARN | → PASS_WARNING |
+
+**Logic chi tiết:**
+- `S_BASE_BAD_STRATEGY_NAME`: `strategy != "RSI_STOCH_V73"` → FAIL
+- `S_BASE_RSI_FLOOR`: `rsi < rsi_min (60)` → WARN
+- `S_BASE_STOCH_FLOOR`: `stoch_k < stoch_k_min (70)` → WARN
+
+#### LONG_V73 — Phase 2.5
+
+| Rule | Severity | Result | Pilot Action |
+|---|---|---|---|
+| `L_BASE_BAD_STRATEGY_NAME` | HIGH | FAIL | REJECT |
+| `L_BASE_RSI_FLOOR` | MEDIUM | WARN | → PASS_WARNING |
+| `L_BASE_STOCH_FLOOR` | MEDIUM | WARN | → PASS_WARNING |
+
+**Logic chi tiết:**
+- `L_BASE_BAD_STRATEGY_NAME`: `strategy != "RSI_STOCH_V73"` → FAIL
+- `L_BASE_RSI_FLOOR`: `rsi > rsi_max (35)` → WARN
+- `L_BASE_STOCH_FLOOR`: `stoch_k > stoch_k_max (20)` → WARN
+
+### 9.3 — Phase 3c: RR Profile Match (sau Advisory Warnings)
+
+| Rule | Severity | Result | Pilot Action |
+|---|---|---|---|
+| `RR_PROFILE_MATCH` (out of band) | MEDIUM | WARN | → PASS_WARNING |
+
+- `target ± 10%` cho mỗi signal_type
+- `MIN_RR_REQUIRED` (lower-bound) vẫn giữ nguyên, không đổi
+
+### 9.4 — Phase 3d: Backend Rescoring (cuối Phase 3)
+
+| Rule | Severity | Result | Pilot Action |
+|---|---|---|---|
+| `BACKEND_SCORE_THRESHOLD` (score < 75) | MEDIUM | WARN | → PASS_WARNING |
+
+- Config: `score_pass_threshold = 75`
+- Scoring: config-driven bonus/penalty table, clamp [0, 100]
+- Pilot mode: score < threshold → WARN, không FAIL
+
+**Score example (SHORT_SQUEEZE ideal):**
+```
+base=70 + vol_regime_breakout_imminent+8 + regime_weak_trend_down+6
++ mom_direction_neg1+5 + squeeze_bars_ge_6+5 + rsi_slope_le_neg4+4
++ atr_percentile_ge_70+3 + kc_position_le_040+3 + confidence_ge_090+3
+= 110 → clamp 100
+```
+
+### 9.5 — V1.1 Config Defaults
+
+```json
+{
+  "rr_tolerance_pct": 0.10,
+  "rr_target_by_type": {
+    "SHORT_SQUEEZE": 2.5,
+    "SHORT_V73": 1.67,
+    "LONG_V73": 1.67
+  },
+  "score_pass_threshold": 75,
+  "strategy_thresholds": {
+    "SHORT_SQUEEZE": {
+      "rsi_min": 35,
+      "kc_position_max": 0.55
+    }
+  },
+  "rescoring": {
+    "SHORT_SQUEEZE": {
+      "base": 70,
+      "bonuses": {
+        "vol_regime_breakout_imminent": 8,
+        "regime_weak_trend_down": 6
+      },
+      "penalties": {
+        "regime_strong_trend_up": -15,
+        "rsi_lt_35": -8
+      }
+    }
+  }
+}
+```
+
+### 9.6 — V1.1 New Reject Codes
+
+| RejectCode | Mapped từ |
+|---|---|
+| `SQ_NO_FIRED` | `SQ_NO_FIRED` FAIL |
+| `SQ_BAD_MOM_DIRECTION` | `SQ_BAD_MOM_DIRECTION` FAIL |
+| `SQ_BAD_VOL_REGIME` | `SQ_BAD_VOL_REGIME` FAIL |
+| `SQ_BAD_STRATEGY_NAME` | `SQ_BAD_STRATEGY_NAME` FAIL |
+| `SQ_RSI_TOO_LOW` | `SQ_RSI_FLOOR` WARN |
+| `SQ_KC_POSITION_TOO_HIGH` | `SQ_KC_POSITION_FLOOR` WARN |
+| `S_BASE_BAD_STRATEGY_NAME` | `S_BASE_BAD_STRATEGY_NAME` FAIL |
+| `S_BASE_RSI_TOO_LOW` | `S_BASE_RSI_FLOOR` WARN |
+| `S_BASE_STOCH_TOO_LOW` | `S_BASE_STOCH_FLOOR` WARN |
+| `L_BASE_BAD_STRATEGY_NAME` | `L_BASE_BAD_STRATEGY_NAME` FAIL |
+| `L_BASE_RSI_TOO_HIGH` | `L_BASE_RSI_FLOOR` WARN |
+| `L_BASE_STOCH_TOO_HIGH` | `L_BASE_STOCH_FLOOR` WARN |
+| `RR_PROFILE_MISMATCH` | `RR_PROFILE_MATCH` WARN |
+| `BACKEND_SCORE_TOO_LOW` | `BACKEND_SCORE_THRESHOLD` WARN |
+
+---
+
+## 10. Rủi ro đã biết
 
 | Rủi ro | Mức độ | Kế hoạch |
 |---|---|---|

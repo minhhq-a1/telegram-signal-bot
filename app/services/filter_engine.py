@@ -46,23 +46,30 @@ class FilterEngine:
         self._check_timeframe(signal, results)
         self._check_confidence_range(signal, results)
         self._check_price_valid(signal, results)
-        
+
         if self._has_fail(results):
             return self._build_result(results, signal, "Hard validation failed")
 
         # Phase 2: Trade math
         self._check_direction_sanity(signal, results)
         self._check_min_rr(signal, results)
-        
+
         if self._has_fail(results):
             return self._build_result(results, signal, "Trade math failed")
+
+        # Phase 2.5: Strategy-specific validation (V1.1)
+        from app.services.strategy_validator import validate_strategy
+        results.extend(validate_strategy(signal, self.config))
+
+        if self._has_fail(results):
+            return self._build_result(results, signal, "Strategy validation failed")
 
         # Phase 3a: Hard business rules
         self._check_min_confidence_by_tf(signal, results)
         self._check_duplicate(signal, results)
         self._check_news_block(signal, results)
         self._check_regime_hard_block(signal, results)
-        
+
         if self._has_fail(results):
             return self._build_result(results, signal, "Business rule failed")
 
@@ -70,6 +77,12 @@ class FilterEngine:
         self._check_volatility(signal, results)
         self._check_cooldown(signal, results)
         self._check_low_volume(signal, results)
+
+        # Phase 3c: RR profile match (V1.1)
+        self._check_rr_profile_match(signal, results)
+
+        # Phase 3d: Backend rescoring + threshold (V1.1)
+        self._check_backend_score(signal, results)
 
         # Phase 4: Route
         return self._build_result(results, signal, "Filters passed")
@@ -309,7 +322,7 @@ class FilterEngine:
             "1m": 5, "3m": 8, "5m": 10, "12m": 20, "15m": 25, "30m": 45, "1h": 90
         })
         minutes = cooldowns.get(tf, 10)
-        
+
         cands = self.signal_repo.find_recent_pass_main_same_side(
             symbol=signal["symbol"],
             timeframe=tf,
@@ -317,8 +330,67 @@ class FilterEngine:
             since_minutes=minutes,
             exclude_signal_id=signal.get("signal_id"),
         )
-        
+
         if len(cands) > 0:
              results.append(FilterResult("COOLDOWN_ACTIVE", "trading", RuleResult.WARN, RuleSeverity.MEDIUM, -0.10, {"count": len(cands)}))
         else:
              results.append(FilterResult("COOLDOWN_ACTIVE", "trading", RuleResult.PASS, RuleSeverity.INFO))
+
+    def _check_rr_profile_match(self, signal: dict, results: list[FilterResult]):
+        """
+        V1.1: RR profile match check.
+        - RR ngoài target ± tolerance → WARN MEDIUM (pilot: không FAIL)
+        - MIN_RR_REQUIRED giữ nguyên lower-bound check
+        """
+        rr = signal.get("risk_reward")
+        if rr is None:
+            return
+
+        signal_type = signal.get("signal_type")
+        targets = self.config.get("rr_target_by_type", {})
+        tolerance = self.config.get("rr_tolerance_pct", 0.10)
+
+        if signal_type not in targets:
+            return  # Unknown type → skip, MIN_RR_REQUIRED đã xử lý
+
+        target = float(targets[signal_type])
+        lo = target * (1 - tolerance)
+        hi = target * (1 + tolerance)
+
+        if lo <= rr <= hi:
+            results.append(FilterResult("RR_PROFILE_MATCH", "trading", RuleResult.PASS, RuleSeverity.INFO))
+        else:
+            # Pilot mode: WARN MEDIUM, không FAIL
+            details = {"rr": rr, "target": target, "tolerance_pct": tolerance, "lo": lo, "hi": hi}
+            results.append(FilterResult("RR_PROFILE_MATCH", "trading", RuleResult.WARN, RuleSeverity.MEDIUM, 0.0, details))
+
+    def _check_backend_score(self, signal: dict, results: list[FilterResult]):
+        """
+        V1.1: Backend rescoring + threshold.
+        - Pilot mode: score < threshold → WARN MEDIUM (không FAIL)
+        - Score >= threshold → PASS
+        - Skip if 'rescoring' not in config (backward compat for existing tests)
+        - Skip if signal_type not in rescoring config (legacy/partial payload)
+        """
+        if "rescoring" not in self.config:
+            return  # V1.0 config — skip backend scoring
+
+        signal_type = signal.get("signal_type")
+        if signal_type not in self.config.get("rescoring", {}):
+            return  # Unknown signal_type — skip backend scoring
+
+        from app.services.rescoring_engine import rescore
+
+        backend_score, items = rescore(signal, self.config)
+        threshold = self.config.get("score_pass_threshold", 75)
+
+        if backend_score < threshold:
+            results.append(FilterResult(
+                "BACKEND_SCORE_THRESHOLD", "rescoring", RuleResult.WARN, RuleSeverity.MEDIUM,
+                0.0, {"score": backend_score, "threshold": threshold, "items": items},
+            ))
+        else:
+            results.append(FilterResult(
+                "BACKEND_SCORE_THRESHOLD", "rescoring", RuleResult.PASS, RuleSeverity.INFO,
+                0.0, {"score": backend_score, "threshold": threshold, "items": items},
+            ))
