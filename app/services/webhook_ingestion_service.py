@@ -158,12 +158,6 @@ class WebhookIngestionService:
         )
 
         notification_job = self._build_notification_job(norm_data, signal_obj.id, filter_result, config)
-        logger.info("debug_config_check", extra={
-            "signal_id": payload.signal_id,
-            "has_rescoring": "rescoring" in config,
-            "log_reject_to_admin": config.get("log_reject_to_admin"),
-            "rescoring_keys": list(config.get("rescoring", {}).keys()),
-        })
         self.db.commit()
         return self._accepted_result(payload.signal_id, filter_result.final_decision, notification_job)
 
@@ -272,45 +266,44 @@ class WebhookIngestionService:
         )
 
     async def deliver_notification(self, notification_job: NotificationJob) -> None:
-        logger.info("deliver_notification_started", extra={
-            "signal_row_id": notification_job.signal_row_id,
-            "route": notification_job.route,
-        })
-        status = None
-        response = None
-        error_detail = None
+        status: str | None = None
+        response: dict | None = None
+        error_detail: str | None = None
+
         try:
-            logger.info("before_notify_call", extra={"notifier_type": type(self.notifier).__name__})
             status, response, error_detail = await self.notifier.notify(
                 notification_job.route,
                 notification_job.message_text,
             )
-            logger.info("after_notify_call", extra={"status": str(status), "response": str(response)[:100]})
         except Exception as e:
-            logger.warning("telegram_notify_raised", extra={"error": str(e), "error_type": type(e).__name__})
-        finally:
-            pass  # status/response captured above even on exception
+            # Always log to audit even if Telegram call fails.
+            # Set FAILED status so the row satisfies the DB constraint.
+            error_detail = f"{type(e).__name__}: {e}"
+            status = DeliveryStatus.FAILED.value
+            logger.warning(
+                "telegram_notify_raised",
+                extra={"signal_row_id": notification_job.signal_row_id, "error": str(e)},
+            )
 
         db = self.background_session_factory()
         try:
             telegram_repo = self.telegram_repo_cls(db)
             chat_id = self.notifier.resolve_chat_id(notification_job.route) or "N/A"
-            status_value = status if isinstance(status, str) else (status.value if status else "UNKNOWN")
+            status_value: str = status if isinstance(status, str) else (
+                status.value if status else DeliveryStatus.FAILED.value
+            )
             sent_at = datetime.now(timezone.utc) if status_value == DeliveryStatus.SENT.value else None
 
             telegram_message_id = None
             if response:
                 telegram_message_id = str(
-                    response.get("_telegram_message_id") or response.get("result", {}).get("message_id") or ""
+                    response.get("_telegram_message_id")
+                    or response.get("result", {}).get("message_id")
+                    or ""
                 )
                 if telegram_message_id == "":
                     telegram_message_id = None
 
-            logger.info("telegram_about_to_log", extra={
-                "signal_row_id": notification_job.signal_row_id,
-                "route": notification_job.route,
-                "status_value": status_value,
-            })
             telegram_repo.create(
                 {
                     "signal_row_id": notification_job.signal_row_id,
@@ -324,9 +317,10 @@ class WebhookIngestionService:
                 }
             )
             db.commit()
-            logger.info("telegram_message_log_created_in_bg", extra={
-                "signal_row_id": notification_job.signal_row_id,
-            })
+            logger.info(
+                "telegram_message_log_created",
+                extra={"signal_row_id": notification_job.signal_row_id, "status": status_value},
+            )
         except Exception:
             db.rollback()
             logger.exception(

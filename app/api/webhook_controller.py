@@ -59,7 +59,6 @@ async def handle_tradingview_webhook(
         )
 
     if result.notification_job is not None:
-        print(f"DEBUG: notification_job route={result.notification_job.route}, len={len(result.notification_job.message_text)}")
         background_tasks.add_task(service.deliver_notification, result.notification_job)
 
     return result.body

@@ -90,7 +90,7 @@ def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
         lambda self: v11_config,
     )
 
-    def fake_notify(self, route, text):
+    async def fake_notify(self, route, text):
         return ("SENT", {"result": {"message_id": 123}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
@@ -106,10 +106,6 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
     """SHORT_SQUEEZE squeeze_fired=0 → REJECT"""
     from app.api import webhook_controller
 
-    # Verify v11_config fixture has required keys
-    assert v11_config.get("log_reject_to_admin") is True, f"v11_config missing log_reject_to_admin: {v11_config}"
-    assert "rescoring" in v11_config, f"v11_config missing rescoring: {v11_config}"
-
     monkeypatch.setattr(
         "app.services.auth_service.AuthService.validate_secret",
         lambda secret: True,
@@ -122,7 +118,7 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
         lambda self: v11_config,
     )
 
-    def fake_notify(self, route, text):
+    async def fake_notify(self, route, text):
         return ("SENT", {"result": {"message_id": 456}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
@@ -155,7 +151,7 @@ def test_long_v73_pass_e2e(client, db_session, monkeypatch, v11_config):
         lambda self: v11_config,
     )
 
-    def fake_notify(self, route, text):
+    async def fake_notify(self, route, text):
         return ("SENT", {"result": {"message_id": 789}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
