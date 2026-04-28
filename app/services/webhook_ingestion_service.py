@@ -276,16 +276,24 @@ class WebhookIngestionService:
             "signal_row_id": notification_job.signal_row_id,
             "route": notification_job.route,
         })
-        status, response, error_detail = await self.notifier.notify(
-            notification_job.route,
-            notification_job.message_text,
-        )
+        status = None
+        response = None
+        error_detail = None
+        try:
+            status, response, error_detail = await self.notifier.notify(
+                notification_job.route,
+                notification_job.message_text,
+            )
+        except Exception as e:
+            logger.warning("telegram_notify_raised", extra={"error": str(e)})
+        finally:
+            pass  # status/response captured above even on exception
 
         db = self.background_session_factory()
         try:
             telegram_repo = self.telegram_repo_cls(db)
             chat_id = self.notifier.resolve_chat_id(notification_job.route) or "N/A"
-            status_value = status if isinstance(status, str) else status.value
+            status_value = status if isinstance(status, str) else (status.value if status else "UNKNOWN")
             sent_at = datetime.now(timezone.utc) if status_value == DeliveryStatus.SENT.value else None
 
             telegram_message_id = None
@@ -296,6 +304,11 @@ class WebhookIngestionService:
                 if telegram_message_id == "":
                     telegram_message_id = None
 
+            logger.info("telegram_about_to_log", extra={
+                "signal_row_id": notification_job.signal_row_id,
+                "route": notification_job.route,
+                "status_value": status_value,
+            })
             telegram_repo.create(
                 {
                     "signal_row_id": notification_job.signal_row_id,
@@ -309,6 +322,9 @@ class WebhookIngestionService:
                 }
             )
             db.commit()
+            logger.info("telegram_message_log_created_in_bg", extra={
+                "signal_row_id": notification_job.signal_row_id,
+            })
         except Exception:
             db.rollback()
             logger.exception(
