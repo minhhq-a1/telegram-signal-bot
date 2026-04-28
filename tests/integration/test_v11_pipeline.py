@@ -25,12 +25,20 @@ def _load_payload(payload_name: str) -> dict:
 
 @pytest.fixture
 def v11_config():
-    # Merge V1.1 config với existing defaults để giữ secret/auth config
-    from app.repositories.config_repo import ConfigRepository
-
-    base = ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG.copy()
-    base.update({
-        "confidence_thresholds": {"15m": 0.74},
+    # Explicit config for V1.1 integration tests. All required keys are set directly
+    # to avoid relying on class-level default which may be cached from prior tests.
+    return {
+        "allowed_symbols": ["BTCUSDT", "BTCUSD"],
+        "allowed_timeframes": ["1m", "3m", "5m", "12m", "15m", "30m", "1h"],
+        "confidence_thresholds": {"15m": 0.74, "5m": 0.78, "30m": 0.72, "1h": 0.70},
+        "cooldown_minutes": {"5m": 10, "30m": 45, "1h": 90},
+        "rr_min_base": 1.5,
+        "rr_min_squeeze": 2.0,
+        "duplicate_price_tolerance_pct": 0.002,
+        "enable_news_block": False,  # Disable news block to avoid DB dependency
+        "news_block_before_min": 15,
+        "news_block_after_min": 30,
+        "log_reject_to_admin": True,  # Critical: admin message for REJECT decisions
         "strategy_thresholds": {
             "SHORT_SQUEEZE": {"rsi_min": 35, "rsi_slope_max": -2, "kc_position_max": 0.55, "atr_pct_min": 0.20},
             "SHORT_V73": {"rsi_min": 60, "stoch_k_min": 70},
@@ -62,8 +70,7 @@ def v11_config():
         "score_pass_threshold": 75,
         "rr_tolerance_pct": 0.10,
         "rr_target_by_type": {"SHORT_SQUEEZE": 2.5, "SHORT_V73": 1.67, "LONG_V73": 1.67},
-    })
-    return base
+    }
 
 
 def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
@@ -83,7 +90,7 @@ def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
         lambda self: v11_config,
     )
 
-    def fake_notify(self, route, text):
+    def fake_notify(route, text):
         return ("SENT", {"result": {"message_id": 123}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
@@ -110,7 +117,7 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
         lambda self: v11_config,
     )
 
-    def fake_notify(self, route, text):
+    def fake_notify(route, text):
         return ("SENT", {"result": {"message_id": 456}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
@@ -123,7 +130,8 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
 
     from app.domain.models import TelegramMessage
     msgs = db_session.execute(select(TelegramMessage)).scalars().all()
-    assert len(msgs) == 1
+    # Admin message should be created because log_reject_to_admin=True in v11_config
+    assert len(msgs) == 1, f"Expected 1 admin TelegramMessage, got {len(msgs)}"
     assert "SQ_NO_FIRED" in msgs[0].message_text
 
 
@@ -142,7 +150,7 @@ def test_long_v73_pass_e2e(client, db_session, monkeypatch, v11_config):
         lambda self: v11_config,
     )
 
-    def fake_notify(self, route, text):
+    def fake_notify(route, text):
         return ("SENT", {"result": {"message_id": 789}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
