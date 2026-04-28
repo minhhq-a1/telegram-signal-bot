@@ -90,7 +90,7 @@ def test_short_squeeze_pass_e2e(client, db_session, monkeypatch, v11_config):
         lambda self: v11_config,
     )
 
-    def fake_notify(route, text):
+    def fake_notify(self, route, text):
         return ("SENT", {"result": {"message_id": 123}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
@@ -122,7 +122,7 @@ def test_short_squeeze_not_fired_e2e(client, db_session, monkeypatch, v11_config
         lambda self: v11_config,
     )
 
-    def fake_notify(route, text):
+    def fake_notify(self, route, text):
         return ("SENT", {"result": {"message_id": 456}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
@@ -155,7 +155,7 @@ def test_long_v73_pass_e2e(client, db_session, monkeypatch, v11_config):
         lambda self: v11_config,
     )
 
-    def fake_notify(route, text):
+    def fake_notify(self, route, text):
         return ("SENT", {"result": {"message_id": 789}}, None)
 
     monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
