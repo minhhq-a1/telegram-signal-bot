@@ -355,3 +355,38 @@ class TestRejectStatsSeverityPriority:
         assert len(body["buckets"]) == 1
         assert body["buckets"][0]["reject_code"] == "SQ_NO_FIRED"
         assert body["buckets"][0]["count"] == 1
+
+
+class TestRejectStatsGroupByDimensionOrder:
+    def test_group_by_dimension_order_respected(
+        self, client, db_session, monkeypatch
+    ):
+        """group_by=reject_code,signal_type should return buckets with correct field order, not swapped."""
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "dashboard_token", "test-dash-token")
+
+        _seed_reject_signal(
+            db_session,
+            signal_id="dim-order-001",
+            signal_type="SHORT_SQUEEZE",
+            fail_rules=[("SQ_NO_FIRED", RuleSeverity.HIGH)],
+        )
+
+        # Caller sends group_by=reject_code,signal_type (REVERSED from default)
+        response = client.get(
+            "/api/v1/analytics/reject-stats?group_by=reject_code,signal_type",
+            headers={"Authorization": "Bearer test-dash-token"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+
+        # First field in bucket should be reject_code, second should be signal_type
+        assert len(body["buckets"]) == 1
+        bucket = body["buckets"][0]
+        assert "reject_code" in bucket
+        assert "signal_type" in bucket
+        assert bucket["reject_code"] == "SQ_NO_FIRED"
+        assert bucket["signal_type"] == "SHORT_SQUEEZE"
+        # Should NOT have "signal_type" as first key or swapped values
+        assert "signal_type" not in bucket.get("reject_code", "")
+        assert "SHORT_SQUEEZE" not in bucket.get("reject_code", "")

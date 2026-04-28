@@ -406,3 +406,85 @@ class TestReverifyHappyPath:
         assert body["reverify_decision"] == "REJECT"
         assert body["original_decision"] == "REJECT"
         assert body["reject_code"] is not None
+
+
+class TestReverifyValidationError:
+    def test_reverify_invalid_raw_payload_returns_422(self, client, db_session, monkeypatch, v11_config):
+        """Old signal with raw_payload incompatible with current schema → 422, not 500."""
+        from app.core.config import settings
+        from app.api import signal_controller
+
+        monkeypatch.setattr(settings, "dashboard_token", "test-dash-token")
+        monkeypatch.setattr(
+            signal_controller.ConfigRepository,
+            "get_signal_bot_config",
+            lambda self: v11_config,
+        )
+
+        now = datetime.now(timezone.utc)
+
+        # raw_payload missing required 'metadata' field — violates current schema
+        raw_payload = {
+            "secret": "test-secret",
+            "signal_id": "invalid-raw-payload-001",
+            "signal": "short",
+            "symbol": "BTCUSDT",
+            "timeframe": "5m",
+            "timestamp": "2026-04-18T15:30:00Z",
+            "bar_time": "2026-04-18T15:30:00Z",
+            "price": 68250.5,
+            "source": "Bot_Webhook_v84",
+            "confidence": 0.82,
+            # intentionally missing "metadata" — TradingViewWebhookPayload requires it
+        }
+
+        webhook_event = WebhookEvent(
+            id=str(uuid.uuid4()),
+            received_at=now,
+            source_ip="127.0.0.1",
+            http_headers={},
+            raw_body=raw_payload,
+            is_valid_json=True,
+            auth_status=AuthStatus.OK,
+            error_message=None,
+        )
+        db_session.add(webhook_event)
+        db_session.flush()
+
+        signal = Signal(
+            id=str(uuid.uuid4()),
+            webhook_event_id=webhook_event.id,
+            signal_id="invalid-raw-payload-001",
+            source="Bot_Webhook_v84",
+            symbol="BTCUSDT",
+            timeframe="5m",
+            side="SHORT",
+            price=68250.5,
+            entry_price=68250.5,
+            stop_loss=68650.0,
+            take_profit=67000.0,
+            risk_reward=1.81,
+            indicator_confidence=0.82,
+            raw_payload=raw_payload,
+            created_at=now,
+        )
+        db_session.add(signal)
+        db_session.flush()
+        db_session.add(SignalDecision(
+            id=str(uuid.uuid4()),
+            signal_row_id=signal.id,
+            decision=DecisionType.PASS_MAIN,
+            decision_reason="seed",
+            telegram_route=TelegramRoute.MAIN,
+            created_at=now,
+        ))
+        db_session.commit()
+
+        response = client.post(
+            f"/api/v1/signals/{signal.signal_id}/reverify",
+            headers={"Authorization": "Bearer test-dash-token"},
+        )
+
+        assert response.status_code == 422
+        body = response.json()
+        assert "raw_payload" in body["detail"].lower() or "schema" in body["detail"].lower()

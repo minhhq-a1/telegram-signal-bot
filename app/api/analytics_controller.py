@@ -11,6 +11,8 @@ from app.domain.models import Signal, SignalDecision, SignalFilterResult, Telegr
 from app.api.dependencies import require_dashboard_auth
 from app.services.reject_codes import rule_code_to_reject_code
 
+_ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
+
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
 
 
@@ -274,89 +276,80 @@ def get_reject_stats(
     """
     since = datetime.now(timezone.utc) - timedelta(days=days)
 
-    if "signal_type" in group_by or "reject_code" in group_by:
-        # Deduplicate: each REJECT signal counted once, pick primary FAIL by severity.
-        # Approach: subquery finds the most severe FAIL per signal, then aggregate.
-        # Severity order: CRITICAL=0, HIGH=1, MEDIUM=2, LOW=3 (Pydantic enums start at 0)
-        from sqlalchemy import literal_column
-
-        # Subquery: most severe FAIL rule_code per REJECT signal
-        severity_order = case(
-            (SignalFilterResult.severity == text("'CRITICAL'"), 0),
-            (SignalFilterResult.severity == text("'HIGH'"), 1),
-            (SignalFilterResult.severity == text("'MEDIUM'"), 2),
-            (SignalFilterResult.severity == text("'LOW'"), 3),
-            else_=4,
-        )
-
-        # Get the most severe FAIL rule per signal (one row per signal)
-        primary_fail_subq = (
-            select(
-                SignalFilterResult.signal_row_id,
-                SignalFilterResult.rule_code,
-            )
-            .join(SignalDecision, SignalDecision.signal_row_id == SignalFilterResult.signal_row_id)
-            .where(
-                SignalDecision.decision == "REJECT",
-                SignalFilterResult.result == "FAIL",
-            )
-            .order_by(SignalFilterResult.signal_row_id, severity_order)
-            .distinct(SignalFilterResult.signal_row_id)
-        ).subquery()
-
-        # Join signals with primary FAIL and aggregate
-        reject_rows = (
-            select(
-                Signal.signal_type,
-                primary_fail_subq.c.rule_code,
-                func.count().label("cnt"),
-            )
-            .join(primary_fail_subq, primary_fail_subq.c.signal_row_id == Signal.id)
-            .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+    # Parse tokens in caller order, validate against whitelist
+    tokens = [t.strip() for t in group_by.split(",") if t.strip()]
+    valid_tokens = [t for t in tokens if t in _ALLOWED_GROUP_BY]
+    if not valid_tokens:
+        # Fallback: simple total rejects
+        total = db.execute(
+            select(func.count(SignalDecision.id))
+            .join(Signal, Signal.id == SignalDecision.signal_row_id)
             .where(
                 Signal.created_at >= since,
                 SignalDecision.decision == "REJECT",
             )
-            .group_by(Signal.signal_type, primary_fail_subq.c.rule_code)
+        ).scalar() or 0
+        return {"period_days": days, "total_rejects": total, "buckets": []}
+
+    # Deduplicate: each REJECT signal counted once, pick primary FAIL by severity.
+    # Severity order: CRITICAL=0, HIGH=1, MEDIUM=2, LOW=3
+    severity_order = case(
+        (SignalFilterResult.severity == text("'CRITICAL'"), 0),
+        (SignalFilterResult.severity == text("'HIGH'"), 1),
+        (SignalFilterResult.severity == text("'MEDIUM'"), 2),
+        (SignalFilterResult.severity == text("'LOW'"), 3),
+        else_=4,
+    )
+
+    # Subquery: most severe FAIL rule_code per REJECT signal
+    primary_fail_subq = (
+        select(
+            SignalFilterResult.signal_row_id,
+            SignalFilterResult.rule_code,
         )
+        .join(SignalDecision, SignalDecision.signal_row_id == SignalFilterResult.signal_row_id)
+        .where(
+            SignalDecision.decision == "REJECT",
+            SignalFilterResult.result == "FAIL",
+        )
+        .order_by(SignalFilterResult.signal_row_id, severity_order)
+        .distinct(SignalFilterResult.signal_row_id)
+    ).subquery()
 
-        rows = db.execute(reject_rows).all()
-        counts: dict[tuple, int] = {}
-        for signal_type, rule_code, cnt in rows:
-            reject_code = rule_code_to_reject_code(rule_code)
-            st = signal_type or "UNKNOWN"
-            rc = reject_code or "UNKNOWN"
-
-            key: tuple
-            if "signal_type" in group_by and "reject_code" in group_by:
-                key = (st, rc)
-            elif "signal_type" in group_by:
-                key = (st,)
-            else:
-                key = (rc,)
-
-            counts[key] = counts.get(key, 0) + cnt
-
-        return {
-            "period_days": days,
-            "group_by": group_by,
-            "buckets": [
-                {
-                    **{k: v for k, v in zip(group_by.split(","), key)},
-                    "count": c,
-                }
-                for key, c in sorted(counts.items())
-            ],
-        }
-
-    # Fallback: simple total rejects
-    total = db.execute(
-        select(func.count(SignalDecision.id))
-        .join(Signal, Signal.id == SignalDecision.signal_row_id)
+    # Join signals with primary FAIL and aggregate
+    reject_rows = (
+        select(
+            Signal.signal_type,
+            primary_fail_subq.c.rule_code,
+            func.count().label("cnt"),
+        )
+        .join(primary_fail_subq, primary_fail_subq.c.signal_row_id == Signal.id)
+        .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
         .where(
             Signal.created_at >= since,
             SignalDecision.decision == "REJECT",
         )
-    ).scalar() or 0
+        .group_by(Signal.signal_type, primary_fail_subq.c.rule_code)
+    )
 
-    return {"period_days": days, "total_rejects": total, "buckets": []}
+    rows = db.execute(reject_rows).all()
+
+    # Build buckets using the EXACT token order from the caller
+    counts: dict[tuple, int] = {}
+    for signal_type, rule_code, cnt in rows:
+        reject_code = rule_code_to_reject_code(rule_code)
+        st = signal_type or "UNKNOWN"
+        rc = reject_code or "UNKNOWN"
+
+        # Build key in caller token order
+        key = tuple(st if t == "signal_type" else rc for t in valid_tokens)
+        counts[key] = counts.get(key, 0) + cnt
+
+    return {
+        "period_days": days,
+        "group_by": ",".join(valid_tokens),
+        "buckets": [
+            {**{t: v for t, v in zip(valid_tokens, key)}, "count": c}
+            for key, c in sorted(counts.items())
+        ],
+    }

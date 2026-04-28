@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
@@ -68,7 +69,13 @@ def reverify_signal(
 
     # 3. Parse raw_payload và normalize lại
     raw_payload_dict = signal.raw_payload
-    payload = TradingViewWebhookPayload.model_validate(raw_payload_dict)
+    try:
+        payload = TradingViewWebhookPayload.model_validate(raw_payload_dict)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Signal raw_payload is incompatible with current schema: {exc.errors()[0]['msg']}",
+        ) from exc
     norm = SignalNormalizer.normalize(None, payload)
 
     # 4. Chạy filter engine với config hiện tại
