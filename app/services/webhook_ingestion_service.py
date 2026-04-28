@@ -272,6 +272,10 @@ class WebhookIngestionService:
         )
 
     async def deliver_notification(self, notification_job: NotificationJob) -> None:
+        logger.info("deliver_notification_started", extra={
+            "signal_row_id": notification_job.signal_row_id,
+            "route": notification_job.route,
+        })
         status, response, error_detail = await self.notifier.notify(
             notification_job.route,
             notification_job.message_text,
