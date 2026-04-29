@@ -77,6 +77,15 @@ def _validate_short_squeeze(signal: dict, config: dict) -> list[FilterResult]:
     else:
         out.append(_pass("SQ_KC_POSITION_FLOOR"))
 
+    # Quality floor: rsi_slope must be <= rsi_slope_max (more negative = steeper RSI decline is better)
+    # e.g. rsi_slope_max = -2 means RSI must be declining by at least 2 units; -1 is too flat → WARN
+    rsi_slope = signal.get("rsi_slope")
+    rsi_slope_max = th.get("rsi_slope_max", -2)
+    if rsi_slope is not None and rsi_slope > rsi_slope_max:
+        out.append(_warn("SQ_RSI_SLOPE_FLOOR", {"rsi_slope": rsi_slope, "max": rsi_slope_max}))
+    else:
+        out.append(_pass("SQ_RSI_SLOPE_FLOOR"))
+
     return out
 
 

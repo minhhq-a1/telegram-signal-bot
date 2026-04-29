@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.domain.models import Signal
 from app.domain.schemas import SignalDetailResponse, TradingViewWebhookPayload
 from app.api.dependencies import require_dashboard_auth
+from app.api.rate_limiter import limiter
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.config_repo import ConfigRepository
 from app.repositories.decision_repo import DecisionRepository
@@ -47,7 +48,9 @@ async def get_signal_detail(signal_id: str, db: Session = Depends(get_db), _auth
 
 
 @router.post("/api/v1/signals/{signal_id}/reverify")
+@limiter.limit("30/minute")
 def reverify_signal(
+    request: Request,
     signal_id: str,
     db: Session = Depends(get_db),
     _auth: None = Depends(require_dashboard_auth),
@@ -76,6 +79,9 @@ def reverify_signal(
             status_code=422,
             detail=f"Signal raw_payload is incompatible with current schema: {exc.errors()[0]['msg']}",
         ) from exc
+    # Pass None for webhook_event_id: the filter engine uses this only for audit logging,
+    # and webhoo_event_id is nullable on the Signal model. The returned signal is not
+    # persisted, so None is safe here.
     norm = SignalNormalizer.normalize(None, payload)
 
     # 4. Chạy filter engine với config hiện tại

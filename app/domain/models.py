@@ -111,6 +111,9 @@ class TelegramMessage(Base):
 
     signal: Mapped["Signal"] = relationship(back_populates="telegram_messages")
 
+# FUTURE: SignalOutcome will be populated when trade outcome tracking is implemented
+# (e.g. via PnL reporting, trade closed events from the broker).
+# The relationship is already wired; insert logic will be added in a follow-up PR.
 class SignalOutcome(Base):
     __tablename__ = "signal_outcomes"
 

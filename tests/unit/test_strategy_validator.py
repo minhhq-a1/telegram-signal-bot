@@ -46,6 +46,7 @@ class TestShortSqueezeValidator:
         assert codes["SQ_BAD_STRATEGY_NAME"].result == RuleResult.PASS
         assert codes["SQ_RSI_FLOOR"].result == RuleResult.PASS
         assert codes["SQ_KC_POSITION_FLOOR"].result == RuleResult.PASS
+        assert codes["SQ_RSI_SLOPE_FLOOR"].result == RuleResult.PASS
 
     def test_fail_not_fired_int(self):
         results = validate_strategy(_sq(squeeze_fired=0), _cfg())
@@ -108,12 +109,26 @@ class TestShortSqueezeValidator:
         codes = {r.rule_code: r for r in results}
         assert codes["SQ_KC_POSITION_FLOOR"].result == RuleResult.PASS
 
+    def test_warn_rsi_slope_insufficient(self):
+        # rsi_slope = -1 is less negative than rsi_slope_max = -2 → below threshold
+        results = validate_strategy(_sq(rsi_slope=-1), _cfg())
+        codes = {r.rule_code: r for r in results}
+        assert codes["SQ_RSI_SLOPE_FLOOR"].result == RuleResult.WARN
+        assert codes["SQ_RSI_SLOPE_FLOOR"].severity == RuleSeverity.MEDIUM
+
+    def test_pass_rsi_slope_at_threshold(self):
+        # rsi_slope = -2 meets the threshold exactly
+        results = validate_strategy(_sq(rsi_slope=-2), _cfg())
+        codes = {r.rule_code: r for r in results}
+        assert codes["SQ_RSI_SLOPE_FLOOR"].result == RuleResult.PASS
+
     def test_missing_optional_fields_pass(self):
         # Fields like rsi, kc_position, rsi_slope are optional
-        results = validate_strategy(_sq(rsi=None, kc_position=None), _cfg())
+        results = validate_strategy(_sq(rsi=None, kc_position=None, rsi_slope=None), _cfg())
         codes = {r.rule_code: r for r in results}
         assert codes["SQ_RSI_FLOOR"].result == RuleResult.PASS
         assert codes["SQ_KC_POSITION_FLOOR"].result == RuleResult.PASS
+        assert codes["SQ_RSI_SLOPE_FLOOR"].result == RuleResult.PASS
 
     def test_unknown_signal_type_returns_empty(self):
         assert validate_strategy({"signal_type": "UNKNOWN_X"}, _cfg()) == []
