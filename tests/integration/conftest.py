@@ -80,6 +80,7 @@ def valid_payload() -> dict:
             "stop_loss": 67980.0,
             "take_profit": 68740.0,
             "signal_type": "LONG_V73",
+            "strategy": "RSI_STOCH_V73",
             "regime": "WEAK_TREND_DOWN",
             "vol_regime": "TRENDING_LOW_VOL",
             "rsi": 31.2,
