@@ -1,11 +1,10 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.domain.models import Signal
-from app.domain.schemas import SignalDetailResponse, TradingViewWebhookPayload
+from app.domain.schemas import SignalDetailResponse
 from app.api.dependencies import require_dashboard_auth
 from app.api.rate_limiter import limiter
 from app.repositories.signal_repo import SignalRepository
@@ -15,7 +14,6 @@ from app.repositories.market_event_repo import MarketEventRepository
 from app.repositories.reverify_repo import ReverifyRepository
 from app.services.filter_engine import FilterEngine
 from app.services.reject_codes import rule_code_to_reject_code
-from app.services.signal_normalizer import SignalNormalizer
 
 router = APIRouter(tags=["signals"])
 
@@ -97,14 +95,6 @@ def reverify_signal(
             },
         )
 
-    payload_ts = (
-        signal.payload_timestamp.isoformat()
-        if signal.payload_timestamp else None
-    )
-    bar_time = (
-        signal.bar_time.isoformat()
-        if signal.bar_time else None
-    )
     signal_dict = {
         "signal_id": signal.signal_id,
         "symbol": signal.symbol,
@@ -134,8 +124,8 @@ def reverify_signal(
         "squeeze_fired": signal.squeeze_fired,
         "squeeze_bars": signal.squeeze_bars,
         "mom_direction": signal.mom_direction,
-        "payload_timestamp": payload_ts,
-        "bar_time": bar_time,
+        "payload_timestamp": signal.payload_timestamp,
+        "bar_time": signal.bar_time,
     }
 
     # 4. Run filter engine with current config
@@ -144,17 +134,9 @@ def reverify_signal(
     engine = FilterEngine(config, signal_repo, MarketEventRepository(db))
     result = engine.run(signal_dict)
 
-    # 5. Merge strategy validation results (Phase 2.5 already in engine.run,
-    #    but extract reject_code from the combined set)
-    from app.core.enums import RuleResult, DecisionType as DType
+    # 5. Extract reject metadata from the engine result.
+    from app.core.enums import RuleResult
     all_results = result.filter_results  # engine.run includes strategy validation
-
-    if any(r.result == RuleResult.FAIL for r in all_results):
-        final_decision = DType.REJECT
-    elif any(r.result == RuleResult.WARN for r in all_results):
-        final_decision = DType.PASS_WARNING
-    else:
-        final_decision = DType.PASS_MAIN
 
     # 6. Extract reject_code from first FAIL
     first_fail = next(
@@ -181,7 +163,7 @@ def reverify_signal(
     ReverifyRepository(db).create({
         "signal_row_id": signal.id,
         "original_decision": original_decision,
-        "reverify_decision": final_decision.value,
+        "reverify_decision": result.final_decision.value,
         "reverify_score": score_value,
         "reject_code": reject_code.value if hasattr(reject_code, "value") else reject_code,
         "decision_reason": result.decision_reason,
@@ -193,7 +175,7 @@ def reverify_signal(
     return {
         "signal_id": signal_id,
         "original_decision": original_decision,
-        "reverify_decision": final_decision.value,
+        "reverify_decision": result.final_decision.value,
         "reverify_score": score_value,
         "reject_code": reject_code.value if hasattr(reject_code, "value") else reject_code,
         "decision_reason": result.decision_reason,

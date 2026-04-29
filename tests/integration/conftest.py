@@ -9,7 +9,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import get_db  # noqa: E402
-from app.domain.models import Base  # noqa: E402
+from app.core.migrations import apply_migrations_to_url  # noqa: E402
+from app.domain.models import Base, Signal  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories.config_repo import ConfigRepository  # noqa: E402
 
@@ -30,7 +31,7 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
     engine = create_engine(INTEGRATION_DATABASE_URL)
-    Base.metadata.create_all(engine)
+    apply_migrations_to_url(INTEGRATION_DATABASE_URL)
     TestingSessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
