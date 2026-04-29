@@ -56,50 +56,119 @@ def reverify_signal(
     _auth: None = Depends(require_dashboard_auth),
 ):
     """
-    Replay filter pipeline với rules hiện tại, không mutate bản ghi gốc.
-    Persists reverify result vào signal_reverify_results.
+    Non-mutating replay of the filter + strategy pipeline.
+
+    Schema-drift resilience (Finding #2 fix):
+    - Pipeline input is built entirely from persisted signal columns (DB snapshot),
+      NOT from raw_payload. This ensures legacy/invalid payload shapes do not
+      affect replay outcomes.
+    - Returns explicit 422 with clear detail when required persisted fields are missing.
     """
-    # 1. Tìm signal gốc
+    # 1. Find signal
     signal_repo = SignalRepository(db)
     signal = signal_repo.find_by_signal_id(signal_id)
     if signal is None:
         raise HTTPException(status_code=404, detail="Signal not found")
 
-    # 2. Lấy original decision
+    # 2. Get original decision
     decision_repo = DecisionRepository(db)
     original = decision_repo.find_by_signal_row_id(signal.id)
     original_decision = original.decision if original else "UNKNOWN"
 
-    # 3. Parse raw_payload và normalize lại
-    raw_payload_dict = signal.raw_payload
-    try:
-        payload = TradingViewWebhookPayload.model_validate(raw_payload_dict)
-    except ValidationError as exc:
+    # 3. Build pipeline input from DB columns (not raw_payload)
+    def _float(col):
+        v = getattr(signal, col, None)
+        return float(v) if v is not None else None
+
+    # Required fields — if any are None, the signal cannot be replayed
+    required = ("entry_price", "risk_reward", "indicator_confidence",
+               "signal_type", "strategy")
+    missing = [f for f in required if getattr(signal, f, None) is None]
+    if missing:
         raise HTTPException(
             status_code=422,
-            detail=f"Signal raw_payload is incompatible with current schema: {exc.errors()[0]['msg']}",
-        ) from exc
-    # Pass None for webhook_event_id: the filter engine uses this only for audit logging,
-    # and webhoo_event_id is nullable on the Signal model. The returned signal is not
-    # persisted, so None is safe here.
-    norm = SignalNormalizer.normalize(None, payload)
+            detail={
+                "reason": "missing_required_persisted_fields",
+                "missing_fields": missing,
+                "message": (
+                    "Cannot reverify: required persisted signal fields are missing. "
+                    "This may indicate a schema migration issue or incomplete data."
+                ),
+            },
+        )
 
-    # 4. Chạy filter engine với config hiện tại
+    payload_ts = (
+        signal.payload_timestamp.isoformat()
+        if signal.payload_timestamp else None
+    )
+    bar_time = (
+        signal.bar_time.isoformat()
+        if signal.bar_time else None
+    )
+    signal_dict = {
+        "signal_id": signal.signal_id,
+        "symbol": signal.symbol,
+        "timeframe": signal.timeframe,
+        "side": signal.side.value if hasattr(signal.side, "value") else signal.side,
+        "price": float(signal.price),
+        "entry_price": float(signal.entry_price),
+        "stop_loss": float(signal.stop_loss) if signal.stop_loss is not None else None,
+        "take_profit": float(signal.take_profit) if signal.take_profit is not None else None,
+        "risk_reward": float(signal.risk_reward),
+        "indicator_confidence": float(signal.indicator_confidence),
+        "signal_type": signal.signal_type,
+        "strategy": signal.strategy,
+        "regime": signal.regime,
+        "vol_regime": signal.vol_regime,
+        "atr": _float("atr"),
+        "atr_pct": _float("atr_pct"),
+        "adx": _float("adx"),
+        "rsi": _float("rsi"),
+        "rsi_slope": _float("rsi_slope"),
+        "stoch_k": _float("stoch_k"),
+        "macd_hist": _float("macd_hist"),
+        "kc_position": _float("kc_position"),
+        "atr_percentile": _float("atr_percentile"),
+        "vol_ratio": _float("vol_ratio"),
+        "squeeze_on": signal.squeeze_on,
+        "squeeze_fired": signal.squeeze_fired,
+        "squeeze_bars": signal.squeeze_bars,
+        "mom_direction": signal.mom_direction,
+        "payload_timestamp": payload_ts,
+        "bar_time": bar_time,
+    }
+
+    # 4. Run filter engine with current config
     config_repo = ConfigRepository(db)
     config = config_repo.get_signal_bot_config()
     engine = FilterEngine(config, signal_repo, MarketEventRepository(db))
-    result = engine.run(norm)
+    result = engine.run(signal_dict)
 
-    # 5. Extract reject_code từ first FAIL
+    # 5. Merge strategy validation results (Phase 2.5 already in engine.run,
+    #    but extract reject_code from the combined set)
+    from app.core.enums import RuleResult, DecisionType as DType
+    all_results = result.filter_results  # engine.run includes strategy validation
+
+    if any(r.result == RuleResult.FAIL for r in all_results):
+        final_decision = DType.REJECT
+    elif any(r.result == RuleResult.WARN for r in all_results):
+        final_decision = DType.PASS_WARNING
+    else:
+        final_decision = DType.PASS_MAIN
+
+    # 6. Extract reject_code from first FAIL
     first_fail = next(
-        (r for r in result.filter_results if r.result.value == "FAIL"),
+        (r for r in all_results if r.result == RuleResult.FAIL),
         None,
     )
-    reject_code = rule_code_to_reject_code(first_fail.rule_code) if first_fail else None
+    reject_code = (
+        rule_code_to_reject_code(first_fail.rule_code)
+        if first_fail else None
+    )
 
-    # 6. Extract backend score từ BACKEND_SCORE_THRESHOLD rule
+    # 7. Extract backend score
     score_item = next(
-        (r for r in result.filter_results if r.rule_code == "BACKEND_SCORE_THRESHOLD"),
+        (r for r in all_results if r.rule_code == "BACKEND_SCORE_THRESHOLD"),
         None,
     )
     score_value: float | None = None
@@ -108,24 +177,24 @@ def reverify_signal(
         score_value = score_item.details.get("score")
         score_items = score_item.details.get("items")
 
-    # 7. Persist reverify result (non-mutating)
+    # 8. Persist reverify result (non-mutating audit log)
     ReverifyRepository(db).create({
         "signal_row_id": signal.id,
         "original_decision": original_decision,
-        "reverify_decision": result.final_decision.value,
+        "reverify_decision": final_decision.value,
         "reverify_score": score_value,
-        "reject_code": reject_code,
+        "reject_code": reject_code.value if hasattr(reject_code, "value") else reject_code,
         "decision_reason": result.decision_reason,
         "score_items": score_items,
-        "filter_results": [r.to_dict() for r in result.filter_results],
+        "filter_results": [r.to_dict() for r in all_results],
     })
     db.commit()
 
     return {
         "signal_id": signal_id,
         "original_decision": original_decision,
-        "reverify_decision": result.final_decision.value,
+        "reverify_decision": final_decision.value,
         "reverify_score": score_value,
-        "reject_code": reject_code,
+        "reject_code": reject_code.value if hasattr(reject_code, "value") else reject_code,
         "decision_reason": result.decision_reason,
     }

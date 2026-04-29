@@ -293,7 +293,8 @@ def get_reject_stats(
 
     # Deduplicate: each REJECT signal counted once, pick primary FAIL by severity.
     # Severity order: CRITICAL=0, HIGH=1, MEDIUM=2, LOW=3
-    severity_order = case(
+    # Tie-breaker: created_at ASC, id ASC (Finding #1 fix).
+    severity_order_num = case(
         (SignalFilterResult.severity == text("'CRITICAL'"), 0),
         (SignalFilterResult.severity == text("'HIGH'"), 1),
         (SignalFilterResult.severity == text("'MEDIUM'"), 2),
@@ -301,20 +302,39 @@ def get_reject_stats(
         else_=4,
     )
 
-    # Subquery: most severe FAIL rule_code per REJECT signal
-    primary_fail_subq = (
+    from sqlalchemy.orm import aliased
+
+    # Window-based approach: ROW_NUMBER() per signal_row_id ordered by
+    # (severity priority, created_at ASC, id ASC) ensures deterministic
+    # selection even when multiple FAILs share the same severity.
+    ranked = (
         select(
+            SignalFilterResult.id,
             SignalFilterResult.signal_row_id,
             SignalFilterResult.rule_code,
+            func.row_number()
+            .over(
+                partition_by=SignalFilterResult.signal_row_id,
+                order_by=[severity_order_num, SignalFilterResult.created_at.asc(), SignalFilterResult.id.asc()],
+            )
+            .label("rn"),
         )
         .join(SignalDecision, SignalDecision.signal_row_id == SignalFilterResult.signal_row_id)
         .where(
             SignalDecision.decision == "REJECT",
             SignalFilterResult.result == "FAIL",
         )
-        .order_by(SignalFilterResult.signal_row_id, severity_order)
-        .distinct(SignalFilterResult.signal_row_id)
-    ).subquery()
+        .subquery()
+    )
+
+    primary_fail_subq = (
+        select(
+            ranked.c.signal_row_id,
+            ranked.c.rule_code,
+        )
+        .where(ranked.c.rn == 1)
+        .subquery()
+    )
 
     # Join signals with primary FAIL and aggregate
     reject_rows = (
