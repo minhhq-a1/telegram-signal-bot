@@ -70,9 +70,9 @@ def test_webhook_pass_main_logs_telegram_delivery(client, db_session, monkeypatc
         source=valid_payload["source"],
         symbol=valid_payload["symbol"],
         timeframe=valid_payload["timeframe"],
-        side="LONG",  # Different side from valid_payload (SHORT) → no cooldown interference
+        side="SHORT",  # Different side from webhook (LONG) → no cooldown or duplicate interference
         price=valid_payload["price"],
-        entry_price=valid_payload["metadata"]["entry"],
+        entry_price=valid_payload["metadata"]["entry"] + 100.0,  # Different entry → no DUPLICATE check match
         stop_loss=valid_payload["metadata"]["stop_loss"],
         take_profit=valid_payload["metadata"]["take_profit"],
         risk_reward=1.81,
@@ -415,7 +415,7 @@ def test_cooldown_only_applies_to_prior_pass_main(
         source=valid_payload["source"],
         symbol=valid_payload["symbol"],
         timeframe=valid_payload["timeframe"],
-        side="SHORT",
+        side="LONG",  # Different side from webhook (LONG) → DUPLICATE check doesn't fire; cooldown check is side-agnostic so it still runs
         price=valid_payload["price"],
         entry_price=valid_payload["metadata"]["entry"] - 200.0,
         stop_loss=valid_payload["metadata"]["stop_loss"] - 200.0,

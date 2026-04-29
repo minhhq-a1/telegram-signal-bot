@@ -111,7 +111,10 @@ def test_reject_unsupported_symbol():
 # Test 6: Cooldown chỉ route warning khi có prior PASS_MAIN
 def test_cooldown_pass_main_routes_to_warning():
     engine = make_filter_engine()
-    engine.signal_repo.find_recent_pass_main_same_side.return_value = [MagicMock()]
+    # Mock the direct SQL query used in side-agnostic cooldown check
+    mock_signal = MagicMock()
+    mock_signal.id = "prior-signal-id"
+    engine.signal_repo.db.execute.return_value.scalars.return_value.all.return_value = [mock_signal.id]
     # Dù confidence = 0.99, cooldown WARN MEDIUM vẫn downgrade
     result = engine.run(make_signal(indicator_confidence=0.99))
     assert result.final_decision == "PASS_WARNING"
@@ -120,7 +123,8 @@ def test_cooldown_pass_main_routes_to_warning():
 
 def test_cooldown_ignores_non_pass_main_history():
     engine = make_filter_engine()
-    engine.signal_repo.find_recent_pass_main_same_side.return_value = []
+    # Mock empty result → no cooldown
+    engine.signal_repo.db.execute.return_value.scalars.return_value.all.return_value = []
     result = engine.run(make_signal(indicator_confidence=0.99))
     assert result.final_decision == "PASS_MAIN"
     assert result.route == "MAIN"

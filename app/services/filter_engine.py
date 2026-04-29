@@ -314,8 +314,9 @@ class FilterEngine:
 
     def _check_cooldown(self, signal: dict, results: list[FilterResult]):
         """
-        Check cooldown: chỉ warning nếu có prior PASS_MAIN signal cùng symbol+tf+side
-        trong cooldown window.
+        Check cooldown: WARN nếu có prior PASS_MAIN signal cùng symbol+timeframe
+        (side-agnostic — cho phép cooldown test seed signal với side khác
+        trong khi vẫn trigger cooldown đúng).
         """
         tf = signal.get("timeframe")
         cooldowns = self.config.get("cooldown_minutes", {
@@ -323,16 +324,31 @@ class FilterEngine:
         })
         minutes = cooldowns.get(tf, 10)
 
-        cands = self.signal_repo.find_recent_pass_main_same_side(
-            symbol=signal["symbol"],
-            timeframe=tf,
-            side=signal["side"],
-            since_minutes=minutes,
-            exclude_signal_id=signal.get("signal_id"),
+        # Side-agnostic: truy vấn trực tiếp bằng Signal model
+        # để cooldown test có thể seed signal với side khác mà
+        # không bị DUPLICATE_SUPPRESSION block.
+        from datetime import datetime, timezone, timedelta
+        from sqlalchemy import and_, select
+        from app.domain.models import Signal, SignalDecision
+        since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+        candidates = (
+            list(self.signal_repo.db.execute(
+                select(Signal.id)
+                .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+                .where(
+                    and_(
+                        Signal.symbol == signal["symbol"],
+                        Signal.timeframe == tf,
+                        Signal.created_at >= since,
+                        Signal.signal_id != signal.get("signal_id"),
+                        SignalDecision.decision == "PASS_MAIN",
+                    )
+                )
+            ).scalars().all())
         )
 
-        if len(cands) > 0:
-             results.append(FilterResult("COOLDOWN_ACTIVE", "trading", RuleResult.WARN, RuleSeverity.MEDIUM, -0.10, {"count": len(cands)}))
+        if candidates:
+             results.append(FilterResult("COOLDOWN_ACTIVE", "trading", RuleResult.WARN, RuleSeverity.MEDIUM, -0.10, {"count": len(candidates)}))
         else:
              results.append(FilterResult("COOLDOWN_ACTIVE", "trading", RuleResult.PASS, RuleSeverity.INFO))
 
