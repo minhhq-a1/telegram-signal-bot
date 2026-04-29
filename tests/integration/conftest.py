@@ -5,7 +5,7 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import get_db  # noqa: E402
@@ -31,6 +31,9 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
     engine = create_engine(INTEGRATION_DATABASE_URL)
+    Base.metadata.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS schema_migrations"))
     apply_migrations_to_url(INTEGRATION_DATABASE_URL)
     TestingSessionLocal = sessionmaker(
         autocommit=False,
