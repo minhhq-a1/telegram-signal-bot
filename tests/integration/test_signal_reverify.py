@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy import select
-from app.domain.models import Signal, SignalReverifyResult
+from app.domain.models import Signal, SignalReverifyResult  # noqa: F401 — Signal referenced in conftest teardown
 
 pytestmark = pytest.mark.integration
 
@@ -55,8 +55,19 @@ class TestReverifyEndpoint:
         resp = client.post(f"/api/v1/signals/{signal.signal_id}/reverify")
         assert resp.status_code == 401
 
-    def test_reverify_with_valid_auth_returns_200(self, client, make_stored_signal):
-        signal = make_stored_signal(signal_type="SHORT_SQUEEZE")
+    def test_reverify_with_valid_auth_returns_200(self, client, db_session, make_stored_signal):
+        signal = make_stored_signal(
+            signal_type="SHORT_SQUEEZE",
+            strategy="KELTNER_SQUEEZE",
+            squeeze_fired=1,
+            mom_direction=-1,
+        )
+        # Set all required persisted fields explicitly
+        signal.entry_price = 74000.0
+        signal.risk_reward = 2.5
+        signal.indicator_confidence = 0.82
+        db_session.commit()
+
         resp = client.post(f"/api/v1/signals/{signal.signal_id}/reverify", headers=_auth_headers())
         assert resp.status_code == 200
 

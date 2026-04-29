@@ -18,14 +18,14 @@ def _load(name):
     return json.loads((FIXTURES / name).read_text())
 
 
-def test_short_squeeze_pass_end_to_end(self, client, db_session):
+def test_short_squeeze_pass_end_to_end(client, db_session):
     resp = client.post("/api/v1/webhooks/tradingview", json=_load("short_squeeze_pass.json"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["decision"] in ("PASS_MAIN", "PASS_WARNING"), body
 
 
-def test_short_squeeze_fail_not_fired(self, client, db_session):
+def test_short_squeeze_fail_not_fired(client, db_session):
     resp = client.post(
         "/api/v1/webhooks/tradingview",
         json=_load("short_squeeze_fail_not_fired.json"),
@@ -35,7 +35,7 @@ def test_short_squeeze_fail_not_fired(self, client, db_session):
     assert body["decision"] == "REJECT", body
 
 
-def test_long_v73_pass(self, client, db_session):
+def test_long_v73_pass(client, db_session):
     resp = client.post("/api/v1/webhooks/tradingview", json=_load("long_v73_pass.json"))
     assert resp.status_code == 200, resp.text
     body = resp.json()
