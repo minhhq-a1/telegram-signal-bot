@@ -84,8 +84,15 @@ def apply_migration(conn: psycopg.Connection, migration: Migration) -> None:
             )
 
 
+_LOCK_TIMEOUT = "10s"
+
+
 def acquire_migration_lock(conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
+        # Set a session-level lock timeout so a stale lock doesn't block forever.
+        # If pg_advisory_lock is held by a crashed process, this will fail after 10s
+        # instead of waiting indefinitely.
+        cur.execute(f"SET lock_timeout = '{_LOCK_TIMEOUT}'")
         cur.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_ADVISORY_LOCK_KEY,))
 
 

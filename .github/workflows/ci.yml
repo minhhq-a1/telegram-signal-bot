@@ -34,6 +34,8 @@ jobs:
 
     env:
       INTEGRATION_DATABASE_URL: postgresql+psycopg://test_user:test_pass@localhost:5432/test_db
+      # Placeholder secret for CI webhook auth — rotate to a real value before production use.
+      TRADINGVIEW_SHARED_SECRET: ci-test-placeholder-not-a-real-secret
 
     steps:
       - name: Checkout repository

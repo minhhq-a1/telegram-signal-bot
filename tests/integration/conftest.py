@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Generator
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import get_db  # noqa: E402
 from app.core.migrations import apply_migrations_to_url  # noqa: E402
+from app.domain.models import Base, Signal  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories.config_repo import ConfigRepository  # noqa: E402
 
@@ -26,21 +28,13 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip_marker)
 
 
-def _reset_db_with_migration(engine) -> None:
-    # DROP SCHEMA clears all tables but the migration runner re-creates schema_migrations.
-    # We also explicitly drop schema_migrations to ensure clean state in CI container reuse.
-    with engine.begin() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-        conn.execute(text("CREATE SCHEMA public"))
-        # Ensure schema_migrations is also gone so migration runner re-creates it clean
-        conn.execute(text("DROP TABLE IF EXISTS schema_migrations CASCADE"))
-    apply_migrations_to_url(INTEGRATION_DATABASE_URL)
-
-
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
     engine = create_engine(INTEGRATION_DATABASE_URL)
-    _reset_db_with_migration(engine)
+    Base.metadata.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS schema_migrations"))
+    apply_migrations_to_url(INTEGRATION_DATABASE_URL)
     TestingSessionLocal = sessionmaker(
         autocommit=False,
         autoflush=False,
@@ -51,6 +45,7 @@ def db_session() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+        Base.metadata.drop_all(engine)
         engine.dispose()
         ConfigRepository.reset_cache()
 
@@ -75,8 +70,8 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 def valid_payload() -> dict:
     return {
         "secret": "test-secret",
-        "signal_id": "tv-btcusdt-5m-1713452400000-short-squeeze",
-        "signal": "short",
+        "signal_id": "tv-btcusdt-5m-1713452400000-long-long_v73",
+        "signal": "long",
         "symbol": "BTCUSDT",
         "timeframe": "5m",
         "timestamp": "2026-04-18T15:30:00Z",
@@ -86,23 +81,93 @@ def valid_payload() -> dict:
         "confidence": 0.82,
         "metadata": {
             "entry": 68250.5,
-            "stop_loss": 68650.0,
-            "take_profit": 67000.0,
-            "signal_type": "SHORT_SQUEEZE",
-            "strategy": "KELTNER_SQUEEZE",
+            "stop_loss": 67980.0,
+            "take_profit": 68740.0,
+            "signal_type": "LONG_V73",
+            "strategy": "RSI_STOCH_V73",
             "regime": "WEAK_TREND_DOWN",
-            "vol_regime": "BREAKOUT_IMMINENT",
-            "squeeze_fired": 1,
-            "mom_direction": -1,
-            "rsi": 45.0,
-            "rsi_slope": -5.0,
-            "kc_position": 0.30,
-            "atr_pct": 0.264,
-            "atr_percentile": 65.0,
+            "vol_regime": "TRENDING_LOW_VOL",
+            "rsi": 31.2,
+            "stoch_k": 12.8,
             "adx": 21.4,
             "atr": 180.3,
-            "stoch_k": 12.8,
+            "atr_pct": 0.264,
             "vol_ratio": 1.24,
             "bar_confirmed": True,
         },
     }
+
+
+@pytest.fixture
+def make_stored_signal(db_session):
+    """Create a persisted Signal + SignalDecision row for integration testing."""
+    created_ids: list = []
+
+    def _mk(**overrides) -> Signal:
+        import uuid
+        from app.domain.models import Signal, SignalDecision
+
+        sig = Signal(
+            id=str(uuid.uuid4()),
+            signal_id=f"test-{uuid.uuid4().hex[:8]}",
+            source="Bot_Webhook_v84",
+            symbol="BTCUSD",
+            timeframe="15m",
+            side="SHORT",
+            price=74988.60,
+            entry_price=74988.60,
+            stop_loss=75429.33,
+            take_profit=73886.79,
+            risk_reward=2.5,
+            indicator_confidence=0.90,
+            raw_payload={
+                "secret": "test",
+                "signal": "short",
+                "symbol": "BTCUSD",
+                "timeframe": "15",
+                "price": 74988.60,
+                "source": "Bot_Webhook_v84",
+                "confidence": 0.90,
+                "metadata": {
+                    "entry": 74988.60,
+                    "stop_loss": 75429.33,
+                    "take_profit": 73886.79,
+                    "signal_type": overrides.get("signal_type", "SHORT_SQUEEZE"),
+                    "strategy": overrides.get("strategy", "KELTNER_SQUEEZE"),
+                    "squeeze_fired": overrides.get("squeeze_fired", 1),
+                    "mom_direction": overrides.get("mom_direction", -1),
+                    "vol_regime": overrides.get("vol_regime", "BREAKOUT_IMMINENT"),
+                    "rsi": overrides.get("rsi", 37.5),
+                    "rsi_slope": overrides.get("rsi_slope", -5.7),
+                    "kc_position": overrides.get("kc_position", 0.31),
+                    "atr_pct": overrides.get("atr_pct", 0.49),
+                    "regime": overrides.get("regime", "WEAK_TREND_DOWN"),
+                    "squeeze_bars": overrides.get("squeeze_bars", 6),
+                    "stoch_k": overrides.get("stoch_k", 41.4),
+                    "atr_percentile": overrides.get("atr_percentile", 78.0),
+                    "adx": overrides.get("adx", 17.5),
+                    "atr": overrides.get("atr", 367.28),
+                    "bar_confirmed": True,
+                    "stop_loss": 75429.33,
+                    "take_profit": 73886.79,
+                },
+            },
+        )
+        for key, val in overrides.items():
+            if hasattr(sig, key):
+                setattr(sig, key, val)
+        db_session.add(sig)
+        db_session.add(SignalDecision(
+            id=str(uuid.uuid4()),
+            signal_row_id=sig.id,
+            decision=overrides.get("original_decision", "PASS_MAIN"),
+            decision_reason="seeded",
+            telegram_route="MAIN",
+        ))
+        db_session.commit()
+        created_ids.append(sig.id)
+        return sig
+
+    yield _mk
+    db_session.query(Signal).filter(Signal.id.in_(created_ids)).delete(synchronize_session=False)
+    db_session.commit()

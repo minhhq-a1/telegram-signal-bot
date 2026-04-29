@@ -13,8 +13,24 @@ def make_filter_engine(config_overrides=None):
         "enable_news_block": True,
         "news_block_before_min": 15,
         "news_block_after_min": 30,
-        # Không có main_score_threshold/warning_score_threshold
-        # Boolean gate không cần score threshold
+        "rr_tolerance_pct": 0.10,
+        "rr_target_by_type": {
+            "SHORT_SQUEEZE": 2.5,
+            "SHORT_V73": 1.67,
+            "LONG_V73": 1.67,
+        },
+        "strategy_thresholds": {
+            "SHORT_SQUEEZE": {
+                "rsi_min": 35,
+                "rsi_slope_max": -2,
+                "kc_position_max": 0.55,
+                "atr_pct_min": 0.20,
+            },
+            "SHORT_V73": {"rsi_min": 60, "stoch_k_min": 70},
+            "LONG_V73": {"rsi_max": 35, "stoch_k_max": 20},
+        },
+        "rescoring": {},
+        "score_pass_threshold": 75,
     }
     if config_overrides:
         config.update(config_overrides)

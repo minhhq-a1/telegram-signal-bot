@@ -10,7 +10,12 @@ class ReverifyRepository:
     def __init__(self, db: Session):
         self.db = db
 
+    REQUIRED_KEYS = frozenset(["signal_row_id", "original_decision", "reverify_decision"])
+
     def create(self, data: dict) -> SignalReverifyResult:
+        missing = self.REQUIRED_KEYS - data.keys()
+        if missing:
+            raise ValueError(f"ReverifyRepository.create missing required keys: {', '.join(sorted(missing))}")
         row = SignalReverifyResult(
             id=str(uuid.uuid4()),
             signal_row_id=data["signal_row_id"],
