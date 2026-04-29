@@ -415,9 +415,9 @@ def test_cooldown_only_applies_to_prior_pass_main(
         source=valid_payload["source"],
         symbol=valid_payload["symbol"],
         timeframe=valid_payload["timeframe"],
-        side="LONG",  # Different side from webhook (LONG) → DUPLICATE check doesn't fire; cooldown check is side-agnostic so it still runs
+        side="LONG",  # Same side as webhook (LONG) so cooldown can fire; entry offset -200.0 keeps price diff > 0.2% to avoid DUPLICATE firing first
         price=valid_payload["price"],
-        entry_price=valid_payload["metadata"]["entry"] - 200.0,
+        entry_price=valid_payload["metadata"]["entry"] - 200.0,  # 0.293% diff > 0.2% tolerance → DUPLICATE won't fire
         stop_loss=valid_payload["metadata"]["stop_loss"] - 200.0,
         take_profit=valid_payload["metadata"]["take_profit"] - 200.0,
         risk_reward=1.81,
