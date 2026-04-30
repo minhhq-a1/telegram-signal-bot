@@ -1,4 +1,4 @@
-# QA Strategy — Signal Bot V1
+# QA Strategy — Signal Bot V1.1
 <!-- File này là nguồn sự thật chính cho trạng thái QA hiện tại của dự án. -->
 
 ## 1. Mục tiêu

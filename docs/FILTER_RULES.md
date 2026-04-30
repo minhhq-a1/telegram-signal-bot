@@ -1,4 +1,4 @@
-# Filter Rules — Signal Bot V1
+# Filter Rules — Signal Bot V1.1
 <!-- Cập nhật: Thay server_score continuous thành boolean gate system -->
 <!-- Lý do: server_score = heuristic + heuristic không có predictive value thực -->
 
@@ -80,7 +80,7 @@ On FAIL:  REJECT — return 400 UNSUPPORTED_SYMBOL
 ### TIMEFRAME_ALLOWED
 ```
 Rule:     timeframe ∈ config.allowed_timeframes
-          V1 whitelist: ["1m", "3m", "5m", "12m", "15m", "30m", "1h"]
+          V1.1 whitelist: ["1m", "3m", "5m", "12m", "15m", "30m", "1h"]
           Rejected: 30S, 45S, 2m, 4m, 6m–11m, 13m–20m, 4h, 1d
 Severity: CRITICAL
 On FAIL:  REJECT (runtime response currently `200` with `decision="REJECT"` via filter/persist flow)
@@ -250,12 +250,12 @@ Khác với DUPLICATE_SUPPRESSION:
 
 ### HTF_BIAS_CHECK
 ```
-V1 — DISABLED hoàn toàn (ENABLE_HTF_FILTER=false):
+V1.1 — DISABLED hoàn toàn (ENABLE_HTF_FILTER=false):
     Không implement fallback dùng regime từ payload.
     Regime từ payload = circular dependency với REGIME_HARD_BLOCK.
     Thà không có rule còn hơn có rule không độc lập.
 
-V1.1+ — Khi có independent market data:
+Future — Khi có independent market data:
     TF 1m, 3m, 5m: fetch EMA200 15m từ exchange API
     LONG  WARN nếu price < EMA200_15m
     SHORT WARN nếu price > EMA200_15m
@@ -265,10 +265,10 @@ V1.1+ — Khi có independent market data:
 ```
 Config: enable_news_block=true
 
-Query bảng market_events:
-    WHERE is_active = true
-    AND start_time - interval '15 minutes' <= NOW()
-    AND end_time + interval '30 minutes' >= NOW()
+Query bảng market_events hiện tại:
+    WHERE impact = 'HIGH'
+    AND start_time <= :signal_time + interval '15 minutes'
+    AND end_time >= :signal_time - interval '30 minutes'
 
 Nếu có event active:
     result:   FAIL
@@ -418,7 +418,7 @@ LOW_VOLUME_WARNING
 NEWS_BLOCK
 DUPLICATE_SUPPRESSION
 COOLDOWN_ACTIVE
-HTF_BIAS_CHECK        ← disabled V1, placeholder cho V1.1+
+HTF_BIAS_CHECK        ← disabled, placeholder cho future independent market data
 ```
 
 ### Routing group
@@ -611,7 +611,7 @@ base=70 + vol_regime_breakout_imminent+8 + regime_weak_trend_down+6
 | Rủi ro | Mức độ | Kế hoạch |
 |---|---|---|
 | Confidence threshold overfit (sample ~136 signals) | CAO | Review sau 4 tuần paper, điều chỉnh theo outcome thực tế |
-| Regime circular dependency (data từ indicator) | TRUNG BÌNH | V1.1: thêm independent market data source |
+| Regime circular dependency (data từ indicator) | TRUNG BÌNH | Future: thêm independent market data source |
 | News block dễ miss (nhập tay) | TRUNG BÌNH | Đặt reminder lịch trước mỗi sự kiện |
 | HTF bias không có ở V1 | THẤP | Disabled hoàn toàn — không dùng fallback giả |
 | Vol/regime data từ indicator có thể sai | THẤP | Chỉ dùng làm WARN advisory, không làm hard FAIL |

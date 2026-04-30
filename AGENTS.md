@@ -1,10 +1,10 @@
-# AGENTS.md — Signal Bot V1
+# AGENTS.md — Signal Bot V1.1
 # Shared rules: Antigravity + Claude.ai Projects
 # Commit file này vào git
 
 ## Project
 
-Telegram Signal Bot V1 — nhận webhook từ TradingView, lọc signal 2 lớp, gửi Telegram.
+Telegram Signal Bot V1.1 — nhận webhook từ TradingView, lọc signal 2 lớp, gửi Telegram, có dashboard/analytics/reverify admin endpoint.
 **Không auto-trade.**
 
 ## Tech Stack
@@ -19,12 +19,12 @@ Telegram Signal Bot V1 — nhận webhook từ TradingView, lọc signal 2 lớp
 ## Cấu trúc thư mục
 
 ```
-app/api/          # FastAPI routers
+app/api/          # FastAPI routers: health, webhook, signals, analytics/dashboard
 app/core/         # config, enums, logging, database
 app/domain/       # schemas.py (Pydantic) + models.py (ORM)
 app/repositories/ # DB access layer
 app/services/     # Business logic
-migrations/       # Raw SQL — không dùng Alembic
+migrations/       # Raw SQL — không dùng Alembic (001 init + V1.1 upgrades)
 docs/             # .md context files
 ```
 
@@ -68,13 +68,17 @@ else                  → PASS_MAIN    (MAIN channel)
 ❌ Hardcode confidence threshold trong code
 ```
 
+## Current V1.1 Notes
+
+- `DecisionType`: `PENDING | PASS_MAIN | PASS_WARNING | REJECT | DUPLICATE` (`DUPLICATE` là response/idempotency, không persisted vào `signal_decisions`).
+- `TelegramRoute`: `MAIN | WARN | ADMIN | NONE`; `ADMIN` dùng cho reject admin side-channel khi `log_reject_to_admin=true`.
+- Timeframe runtime whitelist: `1m, 3m, 5m, 12m, 15m, 30m, 1h`.
+- V1.1 thêm strategy validation, backend rescoring, `POST /api/v1/signals/{id}/reverify`, `signal_reverify_results`, reject analytics, dashboard auth, webhook rate limiting.
+- `TelegramNotifier.notify()` trả `(status, response, error_detail)`; webhook flow commit business records trước rồi notify/log Telegram bằng background task.
+
 ## Thứ tự implement
 
-```
-Phase 1: core/enums → core/config → core/database → domain/schemas → domain/models → migration
-Phase 2: repositories (7 files) → services (5 files)
-Phase 3: api controllers (3 files) → main.py → tests
-```
+Project đã qua scaffold V1. Khi làm task mới, đọc docs/sprint/plan liên quan và code hiện tại trước; `docs/TASKS.md` chỉ là legacy breakdown cho V1 ban đầu.
 
 ## Docs reference
 
@@ -82,5 +86,7 @@ Chi tiết business logic nằm trong `docs/`:
 - `FILTER_RULES.md` — rule engine + decision logic
 - `PAYLOAD_CONTRACT.md` — payload fields + enums
 - `DATABASE_SCHEMA.md` — DDL + indexes
+- `CHANGELOG_V1.1.md` — V1.1 strategy/reverify/analytics changes
+- `POST_V11_OPTIMIZATION_PLAN.md` — backlog/optimization context sau V1.1
 - `TEST_CASES.md` — test cases với input/output
 - `QA_STRATEGY.md` — acceptance criteria, missing TCs, pre-go-live checklist

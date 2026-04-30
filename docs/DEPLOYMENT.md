@@ -1,4 +1,4 @@
-# Deployment Guide — Signal Bot V1
+# Deployment Guide — Signal Bot V1.1
 
 ---
 

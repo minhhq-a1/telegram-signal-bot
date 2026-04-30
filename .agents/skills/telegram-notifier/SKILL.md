@@ -1,3 +1,8 @@
+---
+name: telegram-notifier
+description: "Implement or debug Telegram notification routing, retry behavior, and delivery status handling."
+---
+
 # Skill: Telegram Notifier
 ## Description
 Implement hoặc debug `app/services/telegram_notifier.py` và Telegram delivery logic.
@@ -5,133 +10,109 @@ Trigger khi user đề cập: telegram, notifier, retry, send message, channel r
 
 ## Instructions
 
+Đọc `app/services/telegram_notifier.py`, `tests/unit/test_telegram_notifier.py`, và `docs/CONVENTIONS.md` trước khi sửa logic.
+
 ---
 
-### Interface
+### Interface hiện tại
 
 ```python
 class TelegramNotifier:
-    async def send_message(self, chat_id: str, text: str) -> dict
-        # Gửi 1 message, raise nếu fail (caller xử lý retry)
+    async def send_message(self, chat_id: str, text: str) -> dict:
+        # POST Telegram API. Retry transient failures, raise nếu cuối cùng fail.
 
-    async def notify(self, route: str, text: str) -> tuple[str, dict | None]
+    async def notify(self, route: str, text: str) -> tuple[str, dict | None, str | None]:
         # route: "MAIN" | "WARN" | "ADMIN" | "NONE"
-        # returns: (DeliveryStatus, telegram_response | None)
-        # KHÔNG raise exception — luôn trả tuple
+        # cũng accept legacy decision strings: "PASS_MAIN" | "PASS_WARNING"
+        # returns: (delivery_status, telegram_response | None, error_detail | None)
+        # KHÔNG raise exception ra caller.
 ```
 
 ### Channel routing
 
 ```python
-ROUTE_TO_CHAT = {
-    "MAIN": settings.telegram_main_chat_id,
-    "WARN": settings.telegram_warn_chat_id,
-    "ADMIN": settings.telegram_admin_chat_id,
-}
-
-async def notify(self, route: str, text: str) -> tuple[str, dict | None]:
-    if route == "NONE":
-        return "SKIPPED", None
-
-    chat_id = ROUTE_TO_CHAT.get(route)
-    if not chat_id:
-        return "SKIPPED", None
-
-    return await self._send_with_retry(chat_id, text)
+def resolve_chat_id(self, route: str) -> str | None:
+    if route in {"MAIN", "PASS_MAIN"}:
+        return settings.telegram_main_chat_id
+    if route in {"WARN", "PASS_WARNING"}:
+        return settings.telegram_warn_chat_id
+    if route == "ADMIN":
+        return settings.telegram_admin_chat_id
+    return None
 ```
-
-### Retry logic — quan trọng
 
 ```python
-async def _send_with_retry(
-    self, chat_id: str, text: str, max_retries: int = 3
-) -> tuple[str, dict | None]:
-    last_error = None
-    for attempt in range(max_retries):
-        try:
-            data = await self.send_message(chat_id, text)
-            return "SENT", data
-        except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
-            last_error = str(e)
-            if attempt < max_retries - 1:
-                await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
-    # Hết retry — return FAILED, không raise
-    return "FAILED", None
+async def notify(self, route: str, text: str) -> tuple[str, dict | None, str | None]:
+    if route == "NONE":
+        return "SKIPPED", None, None
+
+    chat_id = self.resolve_chat_id(route)
+    if not chat_id:
+        return "FAILED", None, f"No chat_id configured for route {route}"
+
+    try:
+        response = await self.send_message(chat_id, text)
+        # enrich response with _telegram_message_id when Telegram returns result.message_id
+        return "SENT", response, None
+    except Exception as exc:
+        return "FAILED", None, f"{type(exc).__name__}: {exc}"
 ```
 
-**Quan trọng:**
-- `asyncio.sleep(2 ** attempt)` → lần 1: 1s, lần 2: 2s, lần 3: 4s
-- Sau max_retries: return `("FAILED", None)` — **không raise exception**
-- Caller (webhook_controller) log lỗi và tiếp tục
+### Retry policy trong `send_message()`
 
-### send_message implementation
+Code hiện tại retry trong `send_message()`, không dùng `_send_with_retry()` riêng.
+
+```python
+max_attempts = 4  # initial attempt + 3 retries
+```
+
+Retry behavior bắt buộc:
+
+| Failure | Behavior |
+|---|---|
+| `httpx.TimeoutException` | retry exponential backoff `1s, 2s, 4s`, then raise |
+| `httpx.RequestError` | retry exponential backoff `1s, 2s, 4s`, then raise |
+| HTTP `429` | retry using `Retry-After` header; fallback `2 ** attempt`; then raise |
+| HTTP `5xx` | retry exponential backoff `1s, 2s, 4s`, then raise |
+| HTTP `4xx` except `429` | permanent failure; raise immediately, no retry |
+
+**Quan trọng:**
+- `send_message()` được phép raise sau khi hết retry.
+- `notify()` phải catch exception và return `("FAILED", None, error_detail)`.
+- Không log bot token hoặc secret.
+- Delivery audit row được tạo ở `WebhookIngestionService.deliver_notification()`, không trong notifier.
+
+### send_message implementation shape
 
 ```python
 async def send_message(self, chat_id: str, text: str) -> dict:
-    url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(url, json={"chat_id": chat_id, "text": text})
-        resp.raise_for_status()
-        return resp.json()
-```
-
-### Viết test với respx mock
-
-```python
-import respx
-import httpx
-import re
-
-@respx.mock
-async def test_telegram_retry_success_on_second_attempt():
-    call_count = 0
-
-    def side_effect(request):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise httpx.TimeoutException("timeout")
-        return httpx.Response(200, json={"ok": True, "result": {"message_id": 42}})
-
-    respx.post(re.compile(r"https://api\.telegram\.org/.*")).mock(
-        side_effect=side_effect
-    )
-
-    notifier = TelegramNotifier()
-    status, data = await notifier.notify("MAIN", "test")
-
-    assert status == "SENT"
-    assert data["result"]["message_id"] == 42
-    assert call_count == 2
-
-
-@respx.mock
-async def test_telegram_fail_all_retries_returns_failed():
-    respx.post(re.compile(r"https://api\.telegram\.org/.*")).mock(
-        side_effect=httpx.TimeoutException("timeout")
-    )
-
-    notifier = TelegramNotifier()
-    status, data = await notifier.notify("MAIN", "test")
-
-    # KHÔNG raise — return tuple
-    assert status == "FAILED"
-    assert data is None
-
-
-def test_telegram_route_none_returns_skipped():
-    import asyncio
-    notifier = TelegramNotifier()
-    status, data = asyncio.run(notifier.notify("NONE", "test"))
-    assert status == "SKIPPED"
-    assert data is None
+        for attempt in range(4):
+            try:
+                response = await client.post(self.api_url, json=payload)
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as exc:
+                # 4xx non-429 no retry; 429/5xx retry if attempts remain
+                ...
+            except (httpx.TimeoutException, httpx.RequestError):
+                # retry if attempts remain
+                ...
 ```
 
 ### Verify
 
 ```bash
-python -m pytest tests/unit/test_telegram_notifier.py -v
-# test_retry_success_on_second_attempt
-# test_fail_all_retries_returns_failed
-# test_route_none_returns_skipped
+rtk python -m pytest tests/unit/test_telegram_notifier.py -v
 ```
+
+Expected coverage:
+- success first attempt
+- timeout retry then success
+- exhausted retries raises from `send_message()`
+- `notify("NONE")` returns `SKIPPED`
+- unknown route returns `FAILED`
+- `notify()` catches send failure and returns `FAILED`
+- 4xx non-429 is not retried
+- 5xx and 429 are retried correctly

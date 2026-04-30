@@ -1,4 +1,4 @@
-# Database Schema — Signal Bot V1
+# Database Schema — Signal Bot V1.1
 
 **Database:** PostgreSQL 16  
 **Migration file:** `migrations/001_init.sql`
@@ -243,6 +243,30 @@ CREATE TABLE signal_outcomes (
 
 ---
 
+## 8. `signal_reverify_results` (V1.1)
+
+Audit log cho reverify endpoint. Endpoint replay filter engine bằng persisted signal snapshot + config hiện tại, không mutate decision gốc.
+
+```sql
+CREATE TABLE signal_reverify_results (
+    id                 VARCHAR(36) PRIMARY KEY,
+    signal_row_id      VARCHAR(36) NOT NULL REFERENCES signals(id) ON DELETE CASCADE,
+    original_decision  VARCHAR(32) NOT NULL,
+    reverify_decision  VARCHAR(32) NOT NULL,
+    reverify_score     NUMERIC(6,2),
+    reject_code        VARCHAR(64),
+    decision_reason    TEXT,
+    score_items        JSONB,
+    filter_results     JSONB,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_signal_reverify_signal_row_id
+ON signal_reverify_results(signal_row_id, created_at DESC);
+```
+
+---
+
 ## 9. Indexes
 
 ```sql
@@ -250,9 +274,9 @@ CREATE TABLE signal_outcomes (
 CREATE INDEX idx_signals_symbol_tf_side_created_at
 ON signals(symbol, timeframe, side, created_at DESC);
 
--- Query theo signal_type cho cooldown
-CREATE INDEX idx_signals_signal_type_created_at
-ON signals(signal_type, created_at DESC);
+-- Query theo strategy cho cooldown/analytics
+CREATE INDEX idx_signals_strategy_created_at
+ON signals(strategy, created_at DESC);
 
 -- Idempotency lookup
 CREATE INDEX idx_signals_signal_id
@@ -263,8 +287,8 @@ CREATE INDEX idx_signal_filter_results_signal_row_id
 ON signal_filter_results(signal_row_id);
 
 -- News block query
-CREATE INDEX idx_market_events_active_window
-ON market_events(is_active, start_time, end_time);
+CREATE INDEX idx_market_events_time_window
+ON market_events(start_time, end_time);
 
 -- Telegram delivery lookup
 CREATE INDEX idx_telegram_messages_signal_row_id
@@ -302,7 +326,7 @@ FROM telegram_messages WHERE signal_row_id = '<signal_id>';
 
 ## 11. Cleanup policy (tùy chọn)
 
-V1 không bắt buộc, nhưng nên lên kế hoạch:
+V1.1 không bắt buộc, nhưng nên lên kế hoạch:
 
 ```sql
 -- Xóa raw webhook events cũ (giữ 90 ngày)

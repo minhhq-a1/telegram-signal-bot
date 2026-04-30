@@ -1,4 +1,4 @@
-# Telegram Signal Bot V1
+# Telegram Signal Bot V1.1
 
 > **Mục tiêu:** Nhận alert từ TradingView, lọc tín hiệu 2 lớp, gửi signal tham khảo lên Telegram.  
 > **Không** auto-trade. **Không** quản lý lệnh. Chỉ là **signal assistant**.
@@ -26,15 +26,16 @@ Webhook API  ──► Request Validation ──► Signal Normalizer
 
 ---
 
-## Phạm vi V1
+## Phạm vi V1.1
 
 | Trong phạm vi | Ngoài phạm vi |
 |---|---|
 | Nhận webhook TradingView | Auto trade |
 | Lọc tín hiệu server-side | Position sizing tự động |
-| Gửi Telegram notification | Dashboard web |
+| Gửi Telegram notification | Auto trading dashboard |
 | Lưu audit trail đầy đủ | Multi-user / multi-tenant |
-| Outcome tracking stub | Machine learning scoring |
+| Dashboard/analytics/reverify admin | Machine learning scoring |
+| Outcome tracking stub | Position management |
 
 ---
 
@@ -47,7 +48,7 @@ Webhook API  ──► Request Validation ──► Signal Normalizer
 | HTTP Client | httpx (async) |
 | Validation | Pydantic v2 |
 | Deployment | Docker + Nginx (HTTPS bắt buộc) |
-| Cache (tùy chọn V1.1) | Redis (cooldown/duplicate) |
+| Rate limiting | slowapi in-memory per-IP limit |
 
 ---
 
@@ -58,7 +59,9 @@ app/
 ├── api/
 │   ├── health_controller.py
 │   ├── webhook_controller.py
-│   └── signal_controller.py
+│   ├── signal_controller.py
+│   ├── analytics_controller.py
+│   └── rate_limiter.py
 ├── core/
 │   ├── config.py           # Pydantic settings từ .env
 │   ├── enums.py            # SignalSide, DecisionType, RuleResult...
@@ -79,6 +82,8 @@ app/
 │   ├── auth_service.py
 │   ├── signal_normalizer.py
 │   ├── filter_engine.py    # Core: boolean gate routing
+│   ├── strategy_validator.py
+│   ├── rescoring_engine.py
 │   ├── message_renderer.py
 │   └── telegram_notifier.py
 └── main.py
@@ -92,14 +97,17 @@ docs/
 ├── DB_MIGRATION_RUNBOOK.md # Migration/versioning runbook
 ├── BACKUP_RECOVERY_RUNBOOK.md # Backup/restore/restore-drill guide
 ├── CONVENTIONS.md          # Coding conventions cho AI agent
-├── TASKS.md                # Task breakdown + dependency order
+├── CHANGELOG_V1.1.md       # V1.1 changes
+├── POST_V11_OPTIMIZATION_PLAN.md # Post-V1.1 backlog/context
+├── TASKS.md                # Legacy V1 task breakdown + dependency order
 ├── TEST_CASES.md           # Test cases với input/output
 ├── QA_STRATEGY.md          # Acceptance criteria + QA checklist
 ├── CURSOR_CONTEXT.md       # Context tổng hợp cho AI assistant
 ├── PROJECT_INSTRUCTIONS.md # Claude.ai Projects instructions
 └── examples/               # Sample JSON payloads
 migrations/
-└── 001_init.sql
+├── 001_init.sql
+└── 003_v11_upgrade.sql
 .env.example
 requirements.txt
 Dockerfile
@@ -248,14 +256,14 @@ Bot nhận alert từ **TradingView indicator Bot Webhook v8.4 [BTC]**:
 - Pine Script gửi JSON webhook khi `longSignal` hoặc `shortSignal`
 - Chỉ gửi khi `barstate.isconfirmed` (tránh repainting)
 - Confidence tối thiểu: 70% (configurable tại indicator)
-- Indicator có thể phát nhiều timeframe, nhưng backend V1 chỉ accept whitelist runtime
+- Indicator có thể phát nhiều timeframe, nhưng backend V1.1 chỉ accept whitelist runtime
 
 **Lưu ý quan trọng:**
 - Indicator confidence là **heuristic score**, không phải xác suất thắng thực
 - Bot áp dụng layer 2 filtering để giảm noise thêm
-- Symbol whitelist V1: `BTCUSDT`, `BTCUSD`
-- Timeframe whitelist V1: `1m`, `3m`, `5m`, `12m`, `15m`
-- Các TF như `30S`, `45S`, `2m`, `4m`, `6m–11m`, `13m–20m` không nằm trong backend whitelist V1
+- Symbol whitelist V1.1: `BTCUSDT`, `BTCUSD`
+- Timeframe whitelist V1.1: `1m`, `3m`, `5m`, `12m`, `15m`, `30m`, `1h`
+- Các TF như `30S`, `45S`, `2m`, `4m`, `6m–11m`, `13m–20m`, `4h`, `1d` không nằm trong backend whitelist runtime
 
 ---
 
@@ -280,14 +288,17 @@ Bot nhận alert từ **TradingView indicator Bot Webhook v8.4 [BTC]**:
 
 ## Tài liệu liên quan
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md) — Kiến trúc và data flow chi tiết
-- [PAYLOAD_CONTRACT.md](./PAYLOAD_CONTRACT.md) — Spec payload TradingView
-- [FILTER_RULES.md](./FILTER_RULES.md) — Rule engine + boolean gate logic
-- [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) — Schema PostgreSQL
-- [API_REFERENCE.md](./API_REFERENCE.md) — Endpoint reference
-- [DEPLOYMENT.md](./DEPLOYMENT.md) — Hướng dẫn triển khai
+- [ARCHITECTURE.md](./docs/ARCHITECTURE.md) — Kiến trúc và data flow chi tiết
+- [PAYLOAD_CONTRACT.md](./docs/PAYLOAD_CONTRACT.md) — Spec payload TradingView
+- [FILTER_RULES.md](./docs/FILTER_RULES.md) — Rule engine + boolean gate logic
+- [DATABASE_SCHEMA.md](./docs/DATABASE_SCHEMA.md) — Schema PostgreSQL
+- [API_REFERENCE.md](./docs/API_REFERENCE.md) — Endpoint reference
+- [DEPLOYMENT.md](./docs/DEPLOYMENT.md) — Hướng dẫn triển khai
 - [GITHUB_CICD.md](./docs/GITHUB_CICD.md) — GitHub Actions CI/CD
-- [QA_STRATEGY.md](./QA_STRATEGY.md) — Acceptance criteria + QA checklist
-- [TASKS.md](./TASKS.md) — Task breakdown cho AI agent
-- [PROMPTS.md](./PROMPTS.md) — 22 prompt theo lifecycle dự án
-- [CURSOR_CONTEXT.md](./CURSOR_CONTEXT.md) — Context tổng hợp cho AI assistant
+- [QA_STRATEGY.md](./docs/QA_STRATEGY.md) — Acceptance criteria + QA checklist
+- [TASKS.md](./docs/TASKS.md) — Task breakdown cho AI agent
+- [PROMPTS.md](./docs/PROMPTS.md) — 22 prompt theo lifecycle dự án
+- [VERSION_HISTORY.md](./docs/VERSION_HISTORY.md) — Lịch sử V1.0 → V1.1
+- [CHANGELOG_V1.1.md](./docs/CHANGELOG_V1.1.md) — V1.1 changes
+- [POST_V11_OPTIMIZATION_PLAN.md](./docs/POST_V11_OPTIMIZATION_PLAN.md) — Post-V1.1 backlog/context
+- [CURSOR_CONTEXT.md](./docs/CURSOR_CONTEXT.md) — Context tổng hợp cho AI assistant

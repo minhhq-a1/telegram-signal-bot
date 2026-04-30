@@ -1,4 +1,4 @@
-# API Reference — Signal Bot V1
+# API Reference — Signal Bot V1.1
 
 **Base URL:** `https://your-domain.com`
 **API Version:** `v1` (app `1.1.0`)
