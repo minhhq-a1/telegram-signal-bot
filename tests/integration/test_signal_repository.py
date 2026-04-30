@@ -84,3 +84,80 @@ def test_find_recent_similar_price(signal_repo: SignalRepository, db_session: Se
     # Let's just assert that it fetches correctly based on these fields.
     assert len(similar_signals_2) == 1
     assert similar_signals_2[0].signal_type == "LONG_V73"
+
+
+def test_find_recent_similar_by_entry_range_returns_candidate_within_tolerance(
+    signal_repo: SignalRepository,
+    base_signal_data: Dict[str, Any],
+):
+    signal_repo.create({**base_signal_data, "entry_price": 100.0})
+
+    matches = signal_repo.find_recent_similar_by_entry_range(
+        symbol="BTCUSDT",
+        timeframe="5m",
+        side="LONG",
+        signal_type="LONG_V73",
+        entry_price=100.1,
+        tolerance_pct=0.002,
+        since_minutes=60,
+    )
+
+    assert [signal.signal_id for signal in matches] == ["test-signal-id-1"]
+
+
+def test_find_recent_similar_by_entry_range_excludes_outside_tolerance(
+    signal_repo: SignalRepository,
+    base_signal_data: Dict[str, Any],
+):
+    signal_repo.create({**base_signal_data, "entry_price": 100.0})
+
+    matches = signal_repo.find_recent_similar_by_entry_range(
+        symbol="BTCUSDT",
+        timeframe="5m",
+        side="LONG",
+        signal_type="LONG_V73",
+        entry_price=101.0,
+        tolerance_pct=0.002,
+        since_minutes=60,
+    )
+
+    assert matches == []
+
+
+def test_find_recent_similar_by_entry_range_respects_signal_type(
+    signal_repo: SignalRepository,
+    base_signal_data: Dict[str, Any],
+):
+    signal_repo.create({**base_signal_data, "entry_price": 100.0, "signal_type": "SHORT_SQUEEZE"})
+
+    matches = signal_repo.find_recent_similar_by_entry_range(
+        symbol="BTCUSDT",
+        timeframe="5m",
+        side="LONG",
+        signal_type="LONG_V73",
+        entry_price=100.0,
+        tolerance_pct=0.002,
+        since_minutes=60,
+    )
+
+    assert matches == []
+
+
+def test_find_recent_similar_by_entry_range_excludes_signal_id(
+    signal_repo: SignalRepository,
+    base_signal_data: Dict[str, Any],
+):
+    signal_repo.create({**base_signal_data, "entry_price": 100.0})
+
+    matches = signal_repo.find_recent_similar_by_entry_range(
+        symbol="BTCUSDT",
+        timeframe="5m",
+        side="LONG",
+        signal_type="LONG_V73",
+        entry_price=100.0,
+        tolerance_pct=0.002,
+        since_minutes=60,
+        exclude_signal_id="test-signal-id-1",
+    )
+
+    assert matches == []

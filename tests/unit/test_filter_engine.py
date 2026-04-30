@@ -38,6 +38,7 @@ def make_filter_engine(config_overrides=None):
     mock_signal_repo = MagicMock()
     mock_signal_repo.find_recent_pass_main_same_side.return_value = []
     mock_signal_repo.find_recent_similar.return_value = []
+    mock_signal_repo.find_recent_similar_by_entry_range.return_value = []
 
     mock_market_event_repo = MagicMock()
     mock_market_event_repo.find_active_around.return_value = []
@@ -172,7 +173,7 @@ def test_duplicate_tolerance_uses_fractional_0_2_percent_boundary():
 
     near_match = MagicMock()
     near_match.entry_price = 68251.0  # ~0.00073 away from 68200, inside 0.2%
-    engine.signal_repo.find_recent_similar.return_value = [near_match]
+    engine.signal_repo.find_recent_similar_by_entry_range.return_value = [near_match]
 
     result = engine.run(
         make_signal(
@@ -192,7 +193,7 @@ def test_duplicate_tolerance_does_not_reject_outside_0_2_percent_boundary():
 
     far_enough = MagicMock()
     far_enough.entry_price = 68350.0  # ~0.0022 away from 68200, outside 0.2%
-    engine.signal_repo.find_recent_similar.return_value = [far_enough]
+    engine.signal_repo.find_recent_similar_by_entry_range.return_value = []
 
     result = engine.run(
         make_signal(
@@ -525,3 +526,24 @@ def test_v11_strategy_fail_before_rescoring():
     # BACKEND_SCORE_THRESHOLD should NOT be in results (short-circuited)
     rule_codes = [r.rule_code for r in result.filter_results]
     assert "BACKEND_SCORE_THRESHOLD" not in rule_codes
+
+
+def test_duplicate_check_uses_repository_entry_range_lookup():
+    engine = make_filter_engine()
+    engine.signal_repo.find_recent_similar_by_entry_range.return_value = [MagicMock()]
+    engine.signal_repo.find_recent_similar.return_value = []
+
+    result = engine.run(make_signal())
+
+    assert result.final_decision == "REJECT"
+    engine.signal_repo.find_recent_similar_by_entry_range.assert_called_once_with(
+        symbol="BTCUSDT",
+        timeframe="5m",
+        side="LONG",
+        signal_type="LONG_V73",
+        entry_price=68250.5,
+        tolerance_pct=0.002,
+        since_minutes=10,
+        exclude_signal_id="test-001",
+    )
+    engine.signal_repo.find_recent_similar.assert_not_called()

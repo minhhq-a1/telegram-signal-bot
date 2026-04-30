@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import Optional
 import asyncio
 import httpx
 from app.core.config import settings
@@ -78,10 +77,10 @@ class TelegramNotifier:
                         logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
                         raise
 
-    async def notify(self, route: str, text: str) -> tuple[str, Optional[dict], str | None]:
+    async def notify(self, route: str, text: str) -> tuple[str, dict | None, str | None]:
         """
         Route message tới đúng channel dựa theo TelegramRoute.
-        returns: (DeliveryStatus string, telegram_api_response_Optional[dict], error_detail)
+        returns: (DeliveryStatus string, telegram_api_response_dict | None, error_detail)
         """
         if route == "NONE":
             return ("SKIPPED", None, None)
