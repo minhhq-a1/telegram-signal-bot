@@ -216,3 +216,21 @@ class ErrorResponse(BaseModel):
     status: str = "rejected"
     error_code: str
     message: str
+
+class SignalReverifyResultSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    original_decision: str
+    reverify_decision: str
+    reverify_score: float | None = None
+    reject_code: str | None = None
+    decision_reason: str | None = None
+    score_items: Any | None = None
+    filter_results: Any | None = None
+    created_at: datetime
+
+
+class SignalReverifyHistoryResponse(BaseModel):
+    signal_id: str
+    count: int
+    results: list[SignalReverifyResultSchema] = Field(default_factory=list)

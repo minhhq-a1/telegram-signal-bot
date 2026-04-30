@@ -84,7 +84,7 @@ def test_reject_low_confidence():
     fail_rules = [r.rule_code for r in result.filter_results if r.result.value == "FAIL"]
     assert "MIN_CONFIDENCE_BY_TF" in fail_rules
 
-# Test 3: STRONG_TREND_DOWN + LONG → FAIL → REJECT
+# Test 3: Payload regime hard block remains a V1 rule.
 def test_reject_strong_downtrend_long():
     engine = make_filter_engine()
     result = engine.run(make_signal(regime="STRONG_TREND_DOWN"))

@@ -97,6 +97,34 @@ class TestReverifyEndpoint:
         assert resp.status_code == 200, resp.json()
         assert "reverify_decision" in resp.json()
 
+    def test_reverify_legacy_missing_strategy_metadata_returns_200(self, client, db_session, make_stored_signal):
+        signal = make_stored_signal(signal_type=None, strategy=None)
+        signal.raw_payload = {"legacy": True}
+        db_session.commit()
+
+        resp = client.post(f"/api/v1/signals/{signal.signal_id}/reverify", headers=_auth_headers())
+        assert resp.status_code == 200, resp.json()
+        assert "reverify_decision" in resp.json()
+
+    def test_reverify_results_returns_history(self, client, db_session, make_stored_signal):
+        signal = make_stored_signal()
+        first = client.post(f"/api/v1/signals/{signal.signal_id}/reverify", headers=_auth_headers())
+        second = client.post(f"/api/v1/signals/{signal.signal_id}/reverify", headers=_auth_headers())
+        assert first.status_code == 200
+        assert second.status_code == 200
+
+        resp = client.get(f"/api/v1/signals/{signal.signal_id}/reverify-results", headers=_auth_headers())
+        assert resp.status_code == 200, resp.json()
+        body = resp.json()
+        assert body["signal_id"] == signal.signal_id
+        assert body["count"] == 2
+        assert len(body["results"]) == 2
+        assert "filter_results" in body["results"][0]
+
+    def test_reverify_results_unknown_signal_returns_404(self, client):
+        resp = client.get("/api/v1/signals/does-not-exist/reverify-results", headers=_auth_headers())
+        assert resp.status_code == 404
+
     def test_reverify_missing_required_persisted_fields_returns_422(self, client, db_session, monkeypatch, make_stored_signal):
         """
         Explicit 422 when required persisted replay fields are missing.

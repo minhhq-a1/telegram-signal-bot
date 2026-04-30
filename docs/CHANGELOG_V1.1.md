@@ -11,6 +11,7 @@
 - **`RR_PROFILE_MATCH` rule** cho target-band RR validation (±10%).
 - **Reject code taxonomy** (`app/services/reject_codes.py`): central `RejectCode` enum + `rule_code_to_reject_code()` mapping.
 - **`POST /api/v1/signals/{id}/reverify`** endpoint + `signal_reverify_results` table.
+- **`GET /api/v1/signals/{id}/reverify-results`** endpoint for persisted reverify audit history.
 - **`GET /api/v1/analytics/reject-stats`** aggregation với `group_by=signal_type,reject_code`.
 - Admin reject Telegram messages now include `RejectCode:` line.
 
@@ -21,6 +22,7 @@
 - **`BACKEND_SCORE_THRESHOLD`** dùng WARN MEDIUM (pilot) thay vì FAIL — giữ boolean-gate routing.
 - **`FilterEngine.run()`** adds Phase 2.5 (strategy validation) và Phase 3c/3d (rescoring + profile match).
 - Default `score_pass_threshold = 75`, `rr_tolerance_pct = 0.10`.
+- Reverify accepts legacy persisted snapshots without `signal_type`/`strategy` when core trade fields are present.
 
 ## Unchanged / Deferred
 

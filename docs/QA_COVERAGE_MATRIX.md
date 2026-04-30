@@ -8,7 +8,7 @@ Kết quả verify gần nhất:
 ./.venv/bin/python -m pytest -q
 ```
 
-- `31 passed`
+- `126 passed, 79 skipped`
 
 ## Acceptance Criteria
 
@@ -35,6 +35,17 @@ Kết quả verify gần nhất:
 | Invalid secret error contract | `Covered` | `test_webhook_invalid_secret_returns_documented_error_contract` |
 | Cooldown only applies to prior `PASS_MAIN` | `Covered` | `test_cooldown_only_applies_to_prior_pass_main` |
 | Telegram total failure keeps audit and error detail | `Covered` | `test_telegram_total_failure_keeps_audit_and_error_log` |
+
+
+## V1.1 Regression Coverage
+
+| Regression | Status | Automated Test |
+|---|---|---|
+| Reverify uses DB snapshot, not raw payload | `Covered` | `test_reverify_uses_db_snapshot_not_raw_payload` |
+| Legacy reverify without `signal_type`/`strategy` | `Covered` | `test_reverify_legacy_missing_strategy_metadata_returns_200` |
+| Reverify audit history endpoint | `Covered` | `test_reverify_results_returns_history`, `test_reverify_results_unknown_signal_returns_404` |
+| Backend score WARN pilot | `Covered` | `test_v11_backend_score_threshold_warns`, `test_v11_backend_score_passes` |
+| RR profile WARN pilot | `Covered` | `test_v11_rr_profile_match_warns_upper_bound` |
 
 ## Unit Coverage
 
