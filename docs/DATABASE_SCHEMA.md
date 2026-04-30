@@ -13,7 +13,7 @@ webhook_events (1)
               └──< signal_filter_results (N)  [signal_row_id FK]
               └──  signal_decisions (1)        [signal_row_id FK UNIQUE]
               └──< telegram_messages (N)       [signal_row_id FK]
-              └──  signal_outcomes (1)         [signal_row_id FK UNIQUE] ← V2 stub
+              └──  signal_outcomes (1)         [signal_row_id FK UNIQUE]
 
 system_configs (standalone key-value)
 market_events  (standalone, dùng cho news block)
@@ -224,21 +224,42 @@ WHERE start_time <= :window_end
 
 ---
 
-## 8. `signal_outcomes` (V2 stub)
+## 8. `signal_outcomes`
 
-Chuẩn bị cho outcome tracking tự động ở V2.  
-Schema hiện tại trong code/migration vẫn là bản stub tối giản.
+Outcome tracking cho paper trading / post-trade analysis.
 
 ```sql
 CREATE TABLE signal_outcomes (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    signal_row_id UUID UNIQUE NOT NULL REFERENCES signals(id) ON DELETE CASCADE,
-    is_win        BOOLEAN,
-    pnl_pct       NUMERIC(10,4),
-    exit_price    NUMERIC(18,8),
-    closed_at     TIMESTAMP,
-    created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    signal_row_id       UUID UNIQUE NOT NULL REFERENCES signals(id) ON DELETE CASCADE,
+    outcome_status      VARCHAR(32),   -- OPEN | CLOSED | CANCELED | INVALIDATED
+    close_reason        VARCHAR(32),   -- TP_HIT | SL_HIT | MANUAL_CLOSE | EXPIRED | INVALID_SIGNAL | UNKNOWN
+    is_win              BOOLEAN,
+    entry_price         NUMERIC(18,8),
+    stop_loss           NUMERIC(18,8),
+    take_profit         NUMERIC(18,8),
+    max_favorable_price NUMERIC(18,8),
+    max_adverse_price   NUMERIC(18,8),
+    mfe_pct             NUMERIC(10,4),
+    mae_pct             NUMERIC(10,4),
+    pnl_pct             NUMERIC(10,4),
+    r_multiple          NUMERIC(10,4),
+    exit_price          NUMERIC(18,8),
+    opened_at           TIMESTAMP,
+    closed_at           TIMESTAMP,
+    updated_at          TIMESTAMP,
+    notes               TEXT,
+    created_at          TIMESTAMP NOT NULL DEFAULT NOW()
 );
+```
+
+**Indexes:**
+```sql
+CREATE INDEX idx_signal_outcomes_status
+ON signal_outcomes(outcome_status);
+
+CREATE INDEX idx_signal_outcomes_closed_at
+ON signal_outcomes(closed_at);
 ```
 
 ---
