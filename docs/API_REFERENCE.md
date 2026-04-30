@@ -1,7 +1,7 @@
 # API Reference — Signal Bot V1
 
-**Base URL:** `https://your-domain.com`  
-**API Version:** `v1`  
+**Base URL:** `https://your-domain.com`
+**API Version:** `v1` (app `1.1.0`)
 **Auth:** Shared secret trong request body (không dùng Authorization header)
 
 ---
@@ -13,6 +13,8 @@
 | `GET` | `/api/v1/health` | Health check |
 | `POST` | `/api/v1/webhooks/tradingview` | Nhận alert từ TradingView |
 | `GET` | `/api/v1/signals/{signal_id}` | Debug: xem chi tiết signal |
+| `POST` | `/api/v1/signals/{signal_id}/reverify` | Replay filter với config hiện tại |
+| `GET` | `/api/v1/signals/{signal_id}/reverify-results` | Xem lịch sử reverify |
 
 ---
 
@@ -26,7 +28,7 @@ Kiểm tra service còn sống.
 {
   "status": "ok",
   "service": "telegram-signal-bot",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }
 ```
 
@@ -224,6 +226,79 @@ Ví dụ các case thuộc `INVALID_SCHEMA`:
       "message_text": "🟢 BTCUSDT LONG | 5m\n...",
       "delivery_status": "SENT",
       "sent_at": "2026-04-18T15:30:03Z"
+    }
+  ]
+}
+```
+
+### Response `404 Not Found`
+
+```json
+{
+  "detail": "Signal not found"
+}
+```
+
+---
+
+## POST `/api/v1/signals/{signal_id}/reverify`
+
+**Internal/admin only.** Replay filter engine bằng persisted DB snapshot và config hiện tại. Endpoint này không mutate signal/decision gốc; mỗi lần gọi chỉ append audit row vào `signal_reverify_results`.
+
+Legacy compatibility: `signal_type` và `strategy` có thể thiếu trên signal cũ. Khi thiếu, strategy-specific checks và rescoring theo `signal_type` sẽ tự skip; core trade filters vẫn chạy nếu đủ `entry_price`, `risk_reward`, và `indicator_confidence`.
+
+### Response `200 OK`
+
+```json
+{
+  "signal_id": "tv-btcusdt-5m-1713452400000-long-long_v73",
+  "original_decision": "PASS_MAIN",
+  "reverify_decision": "PASS_WARNING",
+  "reverify_score": 72,
+  "reject_code": null,
+  "decision_reason": "Warnings triggered: BACKEND_SCORE_THRESHOLD"
+}
+```
+
+### Response `422 Unprocessable Entity`
+
+Trả về khi persisted snapshot thiếu field core bắt buộc để replay.
+
+```json
+{
+  "detail": {
+    "reason": "missing_required_persisted_fields",
+    "missing_fields": ["risk_reward"],
+    "message": "Cannot reverify: required persisted signal fields are missing. This may indicate a schema migration issue or incomplete data."
+  }
+}
+```
+
+---
+
+## GET `/api/v1/signals/{signal_id}/reverify-results`
+
+**Internal/admin only.** Trả về audit history đã persist từ các lần reverify, mới nhất trước.
+
+### Response `200 OK`
+
+```json
+{
+  "signal_id": "tv-btcusdt-5m-1713452400000-long-long_v73",
+  "count": 1,
+  "results": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "original_decision": "PASS_MAIN",
+      "reverify_decision": "PASS_WARNING",
+      "reverify_score": 72,
+      "reject_code": null,
+      "decision_reason": "Warnings triggered: BACKEND_SCORE_THRESHOLD",
+      "score_items": ["base=72"],
+      "filter_results": [
+        {"rule_code": "BACKEND_SCORE_THRESHOLD", "result": "WARN", "severity": "MEDIUM"}
+      ],
+      "created_at": "2026-04-30T06:10:00Z"
     }
   ]
 }

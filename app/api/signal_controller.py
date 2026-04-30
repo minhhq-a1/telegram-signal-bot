@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.domain.models import Signal
-from app.domain.schemas import SignalDetailResponse
+from app.domain.schemas import SignalDetailResponse, SignalReverifyHistoryResponse
 from app.api.dependencies import require_dashboard_auth
 from app.api.rate_limiter import limiter
 from app.repositories.signal_repo import SignalRepository
@@ -78,9 +78,8 @@ def reverify_signal(
         v = getattr(signal, col, None)
         return float(v) if v is not None else None
 
-    # Required fields — if any are None, the signal cannot be replayed
-    required = ("entry_price", "risk_reward", "indicator_confidence",
-               "signal_type", "strategy")
+    # Required fields — strategy metadata is optional for legacy rows.
+    required = ("entry_price", "risk_reward", "indicator_confidence")
     missing = [f for f in required if getattr(signal, f, None) is None]
     if missing:
         raise HTTPException(
@@ -179,4 +178,25 @@ def reverify_signal(
         "reverify_score": score_value,
         "reject_code": reject_code.value if hasattr(reject_code, "value") else reject_code,
         "decision_reason": result.decision_reason,
+    }
+
+@router.get(
+    "/api/v1/signals/{signal_id}/reverify-results",
+    response_model=SignalReverifyHistoryResponse,
+)
+def get_reverify_results(
+    signal_id: str,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    signal_repo = SignalRepository(db)
+    signal = signal_repo.find_by_signal_id(signal_id)
+    if signal is None:
+        raise HTTPException(status_code=404, detail="Signal not found")
+
+    rows = ReverifyRepository(db).list_for_signal(signal.id)
+    return {
+        "signal_id": signal.signal_id,
+        "count": len(rows),
+        "results": rows,
     }
