@@ -7,13 +7,171 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func, case, cast, Date, text
 
 from app.core.database import get_db
-from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
+from app.domain.models import Signal, SignalDecision, SignalFilterResult, SignalOutcome, TelegramMessage, WebhookEvent
 from app.api.dependencies import require_dashboard_auth
 from app.services.reject_codes import rule_code_to_reject_code
 
 _ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
+_ALLOWED_OUTCOME_GROUP_BY = frozenset([
+    "timeframe", "signal_type", "strategy", "side", "decision", "telegram_route", "regime", "vol_regime"
+])
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
+
+
+@router.get("/outcomes/summary")
+def get_outcome_summary(
+    days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    totals = db.execute(
+        select(
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", 1), else_=0)).label("closed_count"),
+            func.sum(case((SignalOutcome.outcome_status == "OPEN", 1), else_=0)).label("open_count"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", case((SignalOutcome.is_win.is_(True), 1), else_=0)), else_=0)).label("win_count"),
+            func.avg(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=None)).label("avg_r"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=0)).label("total_r"),
+            func.avg(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.pnl_pct), else_=None)).label("avg_pnl"),
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since)
+    ).one()
+
+    closed_outcomes = int(totals.closed_count or 0)
+    open_outcomes = int(totals.open_count or 0)
+    win_count = int(totals.win_count or 0)
+
+    by_decision_rows = db.execute(
+        select(
+            SignalDecision.decision,
+            func.count(SignalOutcome.id).label("cnt"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+        )
+        .join(Signal, Signal.id == SignalDecision.signal_row_id)
+        .join(SignalOutcome, SignalOutcome.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+        .group_by(SignalDecision.decision)
+    ).all()
+
+    by_decision: dict[str, dict] = {}
+    for row in by_decision_rows:
+        count = int(row.cnt or 0)
+        wins = int(row.wins or 0)
+        by_decision[row.decision] = {
+            "count": count,
+            "win_rate": round((wins / count), 4) if count else 0.0,
+            "avg_r": round(float(row.avg_r or 0), 4),
+        }
+
+    return {
+        "period_days": days,
+        "closed_outcomes": closed_outcomes,
+        "open_outcomes": open_outcomes,
+        "win_rate": round((win_count / closed_outcomes), 4) if closed_outcomes else 0.0,
+        "avg_r_multiple": round(float(totals.avg_r or 0), 4),
+        "median_r_multiple": 0.0,
+        "total_r_multiple": round(float(totals.total_r or 0), 4),
+        "avg_pnl_pct": round(float(totals.avg_pnl or 0), 4),
+        "by_decision": by_decision,
+    }
+
+
+@router.get("/outcomes/by-bucket")
+def get_outcome_buckets(
+    days: int = Query(30, ge=1, le=90),
+    group_by: str = Query("timeframe,signal_type"),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    tokens = [t.strip() for t in group_by.split(",") if t.strip()]
+    if not tokens or any(t not in _ALLOWED_OUTCOME_GROUP_BY for t in tokens):
+        return Response(status_code=400, content='{"error_code":"INVALID_GROUP_BY","message":"Invalid outcome group_by"}', media_type="application/json")
+
+    column_map = {
+        "timeframe": Signal.timeframe,
+        "signal_type": Signal.signal_type,
+        "strategy": Signal.strategy,
+        "side": Signal.side,
+        "decision": SignalDecision.decision,
+        "telegram_route": SignalDecision.telegram_route,
+        "regime": Signal.regime,
+        "vol_regime": Signal.vol_regime,
+    }
+    select_cols = [column_map[t].label(t) for t in tokens]
+
+    rows = db.execute(
+        select(
+            *select_cols,
+            func.count(SignalOutcome.id).label("count"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r_multiple"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+        .group_by(*select_cols)
+        .order_by(func.count(SignalOutcome.id).desc())
+    ).all()
+
+    buckets = []
+    for row in rows:
+        count = int(row.count or 0)
+        item = {token: getattr(row, token) for token in tokens}
+        item.update({
+            "count": count,
+            "win_rate": round((int(row.wins or 0) / count), 4) if count else 0.0,
+            "avg_r_multiple": round(float(row.avg_r_multiple or 0), 4),
+        })
+        buckets.append(item)
+
+    return {"period_days": days, "group_by": tokens, "buckets": buckets}
+
+
+@router.get("/outcomes/rules")
+def get_outcome_rules(
+    days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.execute(
+        select(
+            SignalFilterResult.rule_code,
+            SignalFilterResult.result,
+            SignalFilterResult.severity,
+            func.count(SignalFilterResult.id).label("signals"),
+            func.count(SignalOutcome.id).label("closed_outcomes"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r_multiple"),
+        )
+        .join(Signal, Signal.id == SignalFilterResult.signal_row_id)
+        .outerjoin(
+            SignalOutcome,
+            (SignalOutcome.signal_row_id == Signal.id) & (SignalOutcome.outcome_status == "CLOSED"),
+        )
+        .where(Signal.created_at >= since)
+        .group_by(SignalFilterResult.rule_code, SignalFilterResult.result, SignalFilterResult.severity)
+        .order_by(SignalFilterResult.rule_code)
+    ).all()
+
+    rules = []
+    for row in rows:
+        closed = int(row.closed_outcomes or 0)
+        rules.append({
+            "rule_code": row.rule_code,
+            "result": row.result,
+            "severity": row.severity,
+            "signals": int(row.signals or 0),
+            "closed_outcomes": closed,
+            "win_rate": round((int(row.wins or 0) / closed), 4) if closed else 0.0,
+            "avg_r_multiple": round(float(row.avg_r_multiple or 0), 4),
+        })
+    return {"period_days": days, "rules": rules}
 
 
 @router.get("/summary")
