@@ -31,6 +31,7 @@ class SignalRepository:
         signal = Signal(
             id=str(uuid.uuid4()),
             webhook_event_id=data.get("webhook_event_id"),
+            correlation_id=data.get("correlation_id"),
             signal_id=data["signal_id"],
             source=data["source"],
             symbol=data["symbol"],
@@ -71,7 +72,14 @@ class SignalRepository:
         )
         self.db.add(signal)
         self.db.flush()
-        logger.info("signal_created", extra={"signal_id": signal.signal_id, "row_id": signal.id})
+        logger.info(
+            "signal_created",
+            extra={
+                "signal_id": signal.signal_id,
+                "row_id": signal.id,
+                "correlation_id": signal.correlation_id,
+            },
+        )
         return signal
 
     def find_recent_pass_main_same_side(

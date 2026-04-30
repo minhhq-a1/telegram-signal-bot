@@ -10,6 +10,7 @@ class WebhookEvent(Base):
     __tablename__ = "webhook_events"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     http_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -23,6 +24,7 @@ class Signal(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     webhook_event_id: Mapped[str | None] = mapped_column(ForeignKey("webhook_events.id"), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     signal_id: Mapped[str] = mapped_column(String(128), unique=True)
     source: Mapped[str] = mapped_column(String(64))
     symbol: Mapped[str] = mapped_column(String(32))
