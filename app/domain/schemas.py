@@ -211,6 +211,7 @@ class SignalDetailResponse(BaseModel):
     decision: DecisionSchema | None = None
     filter_results: list[FilterResultSchema] = Field(default_factory=list)
     telegram_messages: list[TelegramMessageSchema] = Field(default_factory=list)
+    outcomes: list[SignalOutcomeSchema] = Field(default_factory=list)
 
 class ErrorResponse(BaseModel):
     status: str = "rejected"
@@ -234,3 +235,46 @@ class SignalReverifyHistoryResponse(BaseModel):
     signal_id: str
     count: int
     results: list[SignalReverifyResultSchema] = Field(default_factory=list)
+
+
+class SignalOutcomeSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    signal_row_id: str
+    outcome_status: str | None = None
+    close_reason: str | None = None
+    is_win: bool | None = None
+    entry_price: float | None = None
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    max_favorable_price: float | None = None
+    max_adverse_price: float | None = None
+    mfe_pct: float | None = None
+    mae_pct: float | None = None
+    pnl_pct: float | None = None
+    r_multiple: float | None = None
+    exit_price: float | None = None
+    opened_at: datetime | None = None
+    closed_at: datetime | None = None
+    updated_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime
+
+
+class OutcomeUpsertRequest(BaseModel):
+    exit_price: float
+    closed_at: datetime
+    close_reason: str
+    max_favorable_price: float | None = None
+    max_adverse_price: float | None = None
+    notes: str | None = None
+
+
+class OutcomeOpenRequest(BaseModel):
+    notes: str | None = None
+
+
+class OutcomeListResponse(BaseModel):
+    count: int
+    outcomes: list[SignalOutcomeSchema] = Field(default_factory=list)

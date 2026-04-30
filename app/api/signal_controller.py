@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.domain.models import Signal
-from app.domain.schemas import SignalDetailResponse, SignalReverifyHistoryResponse
+from app.domain.schemas import SignalDetailResponse, SignalReverifyHistoryResponse, SignalOutcomeSchema
 from app.api.dependencies import require_dashboard_auth
 from app.api.rate_limiter import limiter
 from app.repositories.signal_repo import SignalRepository
@@ -27,7 +27,8 @@ async def get_signal_detail(signal_id: str, db: Session = Depends(get_db), _auth
         .options(
             joinedload(Signal.decision),
             joinedload(Signal.filter_results),
-            joinedload(Signal.telegram_messages)
+            joinedload(Signal.telegram_messages),
+            joinedload(Signal.outcomes),
         )
     )
 
@@ -41,7 +42,8 @@ async def get_signal_detail(signal_id: str, db: Session = Depends(get_db), _auth
         "signal": signal,
         "decision": signal.decision,
         "filter_results": signal.filter_results,
-        "telegram_messages": signal.telegram_messages
+        "telegram_messages": signal.telegram_messages,
+        "outcomes": signal.outcomes,
     }
 
 
