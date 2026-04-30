@@ -19,6 +19,7 @@ class WebhookEventRepository:
         """
         event = WebhookEvent(
             id=str(uuid.uuid4()),
+            correlation_id=data.get("correlation_id"),
             raw_body=data.get("raw_body", {}),
             is_valid_json=data.get("is_valid_json", True),
             http_headers=data.get("http_headers"),
@@ -29,7 +30,10 @@ class WebhookEventRepository:
         )
         self.db.add(event)
         self.db.flush()  # flush để lấy id, chưa commit
-        logger.info("webhook_event_created", extra={"event_id": event.id})
+        logger.info(
+            "webhook_event_created",
+            extra={"event_id": event.id, "correlation_id": event.correlation_id},
+        )
         return event
 
     def mark_auth_failure(self, id: str, reason: str) -> None:
@@ -43,4 +47,7 @@ class WebhookEventRepository:
             event.auth_status = "INVALID_SECRET"
             event.error_message = reason
             self.db.flush()
-            logger.warning("webhook_auth_failure", extra={"event_id": id, "reason": reason})
+            logger.warning(
+                "webhook_auth_failure",
+                extra={"event_id": id, "reason": reason, "correlation_id": event.correlation_id},
+            )

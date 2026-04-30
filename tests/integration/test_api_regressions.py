@@ -5,6 +5,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import select
@@ -139,6 +140,37 @@ def test_webhook_logs_invalid_json_before_rejecting(client, db_session):
     assert event.auth_status == AuthStatus.MISSING
     assert event.error_message == "INVALID_JSON: Request body is not valid JSON"
     assert event.raw_body["_raw_body_text"] == "***REDACTED***"
+    assert event.correlation_id is not None
+
+
+def test_webhook_pipeline_completed_log_includes_correlation_id(client, db_session, monkeypatch, valid_payload):
+    from app.api import webhook_controller
+
+    async def fake_notify(self, route, text):
+        return ("SENT", {"result": {"message_id": 12345}}, None)
+
+    monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fake_notify)
+
+    with patch("app.services.webhook_ingestion_service.logger.info") as logger_info:
+        response = client.post(
+            "/api/v1/webhooks/tradingview",
+            json=valid_payload,
+            headers={"X-Correlation-ID": "corr-log-001"},
+        )
+
+    assert response.status_code == 200
+    summary_calls = [
+        call
+        for call in logger_info.call_args_list
+        if call.args and call.args[0] == "webhook_pipeline_completed"
+    ]
+    assert len(summary_calls) == 1
+
+    summary_extra = summary_calls[0].kwargs["extra"]
+    assert summary_extra["correlation_id"] == "corr-log-001"
+    assert summary_extra["signal_id"] == valid_payload["signal_id"]
+    assert summary_extra["decision"] == "PASS_MAIN"
+    assert "secret" not in json.dumps(summary_extra)
 
 
 def test_webhook_logs_invalid_schema_before_rejecting(client, db_session, valid_payload):

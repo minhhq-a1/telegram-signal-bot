@@ -60,3 +60,31 @@ def test_json_formatter_redacts_nested_sensitive_fields():
     assert payload["payload"]["metadata"]["headers"]["Authorization"] == REDACTED_VALUE
     assert payload["payload"]["items"][0]["password"] == REDACTED_VALUE
     assert payload["payload"]["items"][1]["safe"] == "value"
+
+
+def test_json_formatter_keeps_observability_fields_visible():
+    formatter = JsonFormatter()
+
+    record = logging.LogRecord(
+        name="test.logger",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=55,
+        msg="pipeline summary",
+        args=(),
+        exc_info=None,
+    )
+    record.event = "webhook_pipeline_completed"
+    record.correlation_id = "corr-123"
+    record.signal_id = "sig-123"
+    record.failed_rules = []
+    record.warn_rules = ["LOW_VOLUME_WARNING"]
+    record.notification_enqueued = True
+
+    payload = json.loads(formatter.format(record))
+
+    assert payload["event"] == "webhook_pipeline_completed"
+    assert payload["correlation_id"] == "corr-123"
+    assert payload["signal_id"] == "sig-123"
+    assert payload["warn_rules"] == ["LOW_VOLUME_WARNING"]
+    assert payload["notification_enqueued"] is True
