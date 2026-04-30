@@ -130,6 +130,7 @@ class ConfigRepository:
                 },
             },
         },
+        "auto_create_open_outcomes": False,
     }
 
     def __init__(self, db: Session):

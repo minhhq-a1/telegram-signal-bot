@@ -70,6 +70,37 @@ def test_webhook_invalid_json_stores_generated_correlation_id(client: TestClient
     assert event.correlation_id is not None
     assert len(event.correlation_id) <= 64
 
+
+def test_webhook_auto_creates_open_outcome_when_config_enabled(client: TestClient, db_session, monkeypatch, valid_payload: dict):
+    from app.api import webhook_controller
+    from app.domain.models import SignalOutcome
+
+    original_get_config = webhook_controller.ConfigRepository.get_signal_bot_config
+
+    def fake_get_config(self):
+        config = original_get_config(self)
+        config["auto_create_open_outcomes"] = True
+        return config
+
+    monkeypatch.setattr(webhook_controller.ConfigRepository, "get_signal_bot_config", fake_get_config)
+
+    response = client.post("/api/v1/webhooks/tradingview", json=valid_payload)
+
+    assert response.status_code == 200
+    outcomes = db_session.execute(select(SignalOutcome)).scalars().all()
+    assert len(outcomes) == 1
+    assert outcomes[0].outcome_status == "OPEN"
+
+
+def test_webhook_does_not_auto_create_open_outcome_when_config_disabled(client: TestClient, db_session, valid_payload: dict):
+    from app.domain.models import SignalOutcome
+
+    response = client.post("/api/v1/webhooks/tradingview", json=valid_payload)
+
+    assert response.status_code == 200
+    outcomes = db_session.execute(select(SignalOutcome)).scalars().all()
+    assert outcomes == []
+
 def test_webhook_rejected_invalid_secret(client: TestClient, valid_payload: dict):
     """
     Test case: Reject requests with an invalid secret
