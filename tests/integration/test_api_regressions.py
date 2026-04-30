@@ -15,6 +15,57 @@ from app.domain.models import Signal, SignalDecision, SignalFilterResult, Telegr
 from app.services.filter_engine import FilterExecutionResult
 
 
+def test_health_live_does_not_require_db(client):
+    response = client.get("/api/v1/health/live")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["service"] == "telegram-signal-bot"
+
+
+def test_health_ready_returns_ok_when_db_and_config_are_available(client):
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "checks": {"database": "ok", "config": "ok"},
+    }
+
+
+def test_health_ready_returns_503_when_db_query_fails(client, monkeypatch):
+    from app.api import health_controller
+
+    def fake_execute(*args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(health_controller.Session, "execute", fake_execute, raising=False)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["database"] == "fail"
+
+
+def test_health_deps_returns_ok_without_sending_telegram(client, monkeypatch):
+    from app.api import webhook_controller
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("Telegram should not be called by /health/deps")
+
+    monkeypatch.setattr(webhook_controller.TelegramNotifier, "notify", fail_if_called)
+
+    response = client.get("/api/v1/health/deps")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "checks": {"database": "ok", "telegram": "ok"},
+    }
+
+
 def test_webhook_pass_main_logs_telegram_delivery(client, db_session, monkeypatch, valid_payload):
     from app.api import webhook_controller
 
