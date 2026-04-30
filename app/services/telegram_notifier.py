@@ -11,6 +11,12 @@ class TelegramNotifier:
     def __init__(self):
         self.bot_token = settings.telegram_bot_token
         self.api_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=10.0)
+        return self._client
 
     async def send_message(self, chat_id: str, text: str) -> dict:
         """
@@ -21,61 +27,62 @@ class TelegramNotifier:
         - 4xx (not 429): permanent failure — raise immediately, no retry
         """
         payload = {"chat_id": chat_id, "text": text}
-        max_attempts = 4
+        max_attempts = 3
+        backoff_schedule = [0.5, 1.0, 2.0]
+        client = self._get_client()
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for attempt in range(max_attempts):
-                try:
-                    response = await client.post(self.api_url, json=payload)
-                    response.raise_for_status()
-                    return response.json()
+        for attempt in range(max_attempts):
+            try:
+                response = await client.post(self.api_url, json=payload)
+                response.raise_for_status()
+                return response.json()
 
-                except httpx.HTTPStatusError as e:
-                    status = e.response.status_code
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
 
-                    if 400 <= status < 500 and status != 429:
-                        logger.error(
-                            "telegram_send_permanent_failure",
-                            extra={"chat_id": chat_id, "status_code": status, "error": str(e)},
-                        )
-                        raise
+                if 400 <= status < 500 and status != 429:
+                    logger.error(
+                        "telegram_send_permanent_failure",
+                        extra={"chat_id": chat_id, "status_code": status, "error": str(e)},
+                    )
+                    raise
 
-                    if status == 429:
-                        try:
-                            sleep_secs = float(e.response.headers.get("Retry-After", ""))
-                        except (ValueError, TypeError):
-                            sleep_secs = 2 ** attempt
-                        logger.warning(
-                            "telegram_send_rate_limited",
-                            extra={"chat_id": chat_id, "attempt": attempt + 1, "retry_after": sleep_secs},
-                        )
-                        if attempt < max_attempts - 1:
-                            await asyncio.sleep(sleep_secs)
-                            continue
-                        logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
-                        raise
-
-                    # 5xx — retry with exponential backoff
+                if status == 429:
+                    retry_after = e.response.headers.get("Retry-After", "")
+                    try:
+                        sleep_secs = float(retry_after)
+                    except (ValueError, TypeError):
+                        sleep_secs = backoff_schedule[attempt]
                     logger.warning(
-                        "telegram_send_failed",
-                        extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)},
+                        "telegram_send_rate_limited",
+                        extra={"chat_id": chat_id, "attempt": attempt + 1, "retry_after": sleep_secs},
                     )
                     if attempt < max_attempts - 1:
-                        await asyncio.sleep(2 ** attempt)
-                    else:
-                        logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
-                        raise
+                        await asyncio.sleep(sleep_secs)
+                        continue
+                    logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
+                    raise
 
-                except (httpx.TimeoutException, httpx.RequestError) as e:
-                    logger.warning(
-                        "telegram_send_failed",
-                        extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)},
-                    )
-                    if attempt < max_attempts - 1:
-                        await asyncio.sleep(2 ** attempt)
-                    else:
-                        logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
-                        raise
+                logger.warning(
+                    "telegram_send_failed",
+                    extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)},
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(backoff_schedule[attempt])
+                    continue
+                logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
+                raise
+
+            except (httpx.TimeoutException, httpx.RequestError) as e:
+                logger.warning(
+                    "telegram_send_failed",
+                    extra={"chat_id": chat_id, "attempt": attempt + 1, "error": str(e)},
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(backoff_schedule[attempt])
+                    continue
+                logger.error("telegram_send_max_retries_reached", extra={"chat_id": chat_id})
+                raise
 
     async def notify(self, route: str, text: str) -> tuple[str, dict | None, str | None]:
         """

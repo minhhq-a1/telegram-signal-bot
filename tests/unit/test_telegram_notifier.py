@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -61,8 +61,8 @@ async def test_send_message_retries_on_timeout_then_succeeds():
 
     assert result == {"ok": True, "result": {"message_id": 99}}
     assert mock_sleep.call_count == 2
-    mock_sleep.assert_any_call(1)  # 2**0
-    mock_sleep.assert_any_call(2)  # 2**1
+    mock_sleep.assert_any_call(0.5)
+    mock_sleep.assert_any_call(1.0)
 
 
 async def test_send_message_exhausts_retries_raises():
@@ -81,11 +81,10 @@ async def test_send_message_exhausts_retries_raises():
         with pytest.raises(httpx.TimeoutException):
             await notifier.send_message("chat-123", "hello")
 
-    # 4 attempts = 3 sleeps (no sleep after last attempt)
-    assert mock_sleep.call_count == 3
-    mock_sleep.assert_any_call(1)   # 2**0
-    mock_sleep.assert_any_call(2)   # 2**1
-    mock_sleep.assert_any_call(4)   # 2**2
+    # 3 attempts = 2 sleeps (no sleep after last attempt)
+    assert mock_sleep.call_count == 2
+    mock_sleep.assert_any_call(0.5)
+    mock_sleep.assert_any_call(1.0)
 
 
 async def test_send_message_retries_on_http_status_error():
@@ -232,7 +231,7 @@ async def test_send_message_500_is_retried():
         result = await notifier.send_message("chat-123", "hello")
 
     assert result == {"ok": True, "result": {"message_id": 5}}
-    mock_sleep.assert_called_once_with(1)  # 2**0
+    mock_sleep.assert_called_once_with(0.5)
 
 
 @pytest.mark.asyncio
@@ -280,4 +279,18 @@ async def test_send_message_429_fallback_to_exponential_when_no_header():
         result = await notifier.send_message("chat-123", "hello")
 
     assert result == {"ok": True, "result": {"message_id": 11}}
-    mock_sleep.assert_called_once_with(1)  # fallback 2**0
+    mock_sleep.assert_called_once_with(0.5)
+
+
+@pytest.mark.asyncio
+async def test_send_message_reuses_async_client_per_notifier_instance():
+    notifier = TelegramNotifier()
+    client = MagicMock()
+    client.post = AsyncMock(return_value=_make_response(200, {"ok": True, "result": {"message_id": 99}}))
+
+    with patch("httpx.AsyncClient", return_value=client) as mock_client_cls:
+        await notifier.send_message("chat-123", "hello")
+        await notifier.send_message("chat-123", "hello again")
+
+    mock_client_cls.assert_called_once_with(timeout=10.0)
+    assert client.post.await_count == 2
