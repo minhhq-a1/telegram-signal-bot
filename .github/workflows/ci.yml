@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Opt in before GitHub's June 2026 default switch and silence Node.js 20 action warnings.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
