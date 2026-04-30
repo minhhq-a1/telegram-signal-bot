@@ -1,4 +1,3 @@
-from typing import Optional
 import secrets
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -8,7 +7,7 @@ logger = get_logger(__name__)
 
 class AuthService:
     @staticmethod
-    def validate_secret(secret: Optional[str]) -> bool:
+    def validate_secret(secret: str | None) -> bool:
         """
         Xác thực secret key từ payload của TradingView.
         Sử dụng secrets.compare_digest để tránh timing attack.

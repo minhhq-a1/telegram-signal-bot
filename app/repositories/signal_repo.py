@@ -60,11 +60,11 @@ class SignalRepository:
             kc_position=data.get("kc_position"),
             atr_percentile=data.get("atr_percentile"),
             vol_ratio=data.get("vol_ratio"),
-             squeeze_on=data.get("squeeze_on"),
-             squeeze_fired=data.get("squeeze_fired"),
-             squeeze_bars=data.get("squeeze_bars"),
-             mom_direction=data.get("mom_direction"),
-             payload_timestamp=data.get("payload_timestamp"),
+            squeeze_on=data.get("squeeze_on"),
+            squeeze_fired=data.get("squeeze_fired"),
+            squeeze_bars=data.get("squeeze_bars"),
+            mom_direction=data.get("mom_direction"),
+            payload_timestamp=data.get("payload_timestamp"),
             bar_time=data.get("bar_time"),
             raw_payload=data.get("raw_payload", {}),
             created_at=datetime.now(timezone.utc),
@@ -142,3 +142,43 @@ class SignalRepository:
         )
         candidates = list(self.db.execute(stmt).scalars().all())
         return candidates
+
+    def find_recent_similar_by_entry_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        side: str,
+        signal_type: str | None,
+        entry_price: float,
+        tolerance_pct: float,
+        since_minutes: int,
+        exclude_signal_id: str | None = None,
+    ) -> list[Signal]:
+        """
+        Tìm duplicate candidates bằng entry-price range tại DB layer.
+
+        Preserves old predicate: abs(entry - candidate) / candidate < tolerance.
+        """
+        since = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+        lower = entry_price / (1 + tolerance_pct)
+        upper = entry_price / (1 - tolerance_pct)
+
+        conditions = [
+            Signal.symbol == symbol,
+            Signal.timeframe == timeframe,
+            Signal.side == side,
+            Signal.created_at >= since,
+            Signal.entry_price > lower,
+            Signal.entry_price < upper,
+        ]
+        if signal_type is not None:
+            conditions.append(Signal.signal_type == signal_type)
+        if exclude_signal_id is not None:
+            conditions.append(Signal.signal_id != exclude_signal_id)
+
+        stmt = (
+            select(Signal)
+            .where(and_(*conditions))
+            .order_by(Signal.created_at.desc())
+        )
+        return list(self.db.execute(stmt).scalars().all())

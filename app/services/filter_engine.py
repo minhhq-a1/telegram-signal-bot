@@ -1,6 +1,6 @@
 from __future__ import annotations
 import dataclasses
-from typing import Optional, Any
+from typing import Any
 from datetime import datetime, timezone
 from app.core.enums import RuleResult, RuleSeverity, DecisionType, TelegramRoute
 
@@ -11,7 +11,7 @@ class FilterResult:
     result: RuleResult
     severity: RuleSeverity
     score_delta: float = 0.0
-    details: Optional[dict] = None
+    details: dict | None = None
 
     def to_dict(self):
         return {
@@ -253,24 +253,18 @@ class FilterEngine:
         minutes = cooldowns.get(tf, 10)
         tolerance = self.config.get("duplicate_price_tolerance_pct", 0.002)
 
-        candidates = self.signal_repo.find_recent_similar(
+        candidates = self.signal_repo.find_recent_similar_by_entry_range(
             symbol=signal["symbol"],
             timeframe=tf,
             side=signal["side"],
             signal_type=signal.get("signal_type"),
+            entry_price=signal.get("entry_price", 0),
+            tolerance_pct=tolerance,
             since_minutes=minutes,
             exclude_signal_id=signal.get("signal_id"),
         )
-        
-        entry = signal.get("entry_price", 0)
-        is_duplicate = False
-        
-        for cand in candidates:
-             if cand.entry_price > 0 and abs(entry - float(cand.entry_price)) / float(cand.entry_price) < tolerance:
-                 is_duplicate = True
-                 break
 
-        if is_duplicate:
+        if candidates:
              results.append(FilterResult("DUPLICATE_SUPPRESSION", "trading", RuleResult.FAIL, RuleSeverity.HIGH))
         else:
              results.append(FilterResult("DUPLICATE_SUPPRESSION", "trading", RuleResult.PASS, RuleSeverity.INFO))
