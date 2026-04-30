@@ -110,3 +110,13 @@ Expected:
 
 - Go nếu tất cả bước trên đúng expected behavior
 - No-Go nếu thiếu audit row cho invalid request, duplicate không trả `DUPLICATE`, hoặc valid signal không persist đủ business records
+
+
+## Standard verify commands
+
+```bash
+python3 -m pytest tests/unit -q
+python3 -m pytest tests/integration -q
+python3 -m pytest -q
+bash scripts/smoke_local.sh
+```
