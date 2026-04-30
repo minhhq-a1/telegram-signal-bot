@@ -22,6 +22,7 @@ from app.repositories.market_event_repo import MarketEventRepository
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.telegram_repo import TelegramRepository
 from app.repositories.webhook_event_repo import WebhookEventRepository
+from app.repositories.outcome_repo import OutcomeRepository
 from app.services.auth_service import AuthService
 from app.services.filter_engine import FilterEngine
 from app.services.message_renderer import MessageRenderer
@@ -65,6 +66,7 @@ class WebhookIngestionService:
         self.decision_repo = decision_repo_cls(db)
         self.telegram_repo_cls = telegram_repo_cls
         self.telegram_repo = telegram_repo_cls(db)
+        self.outcome_repo = OutcomeRepository(db)
         self.config_repo = config_repo_cls(db)
         self.market_repo = market_event_repo_cls(db)
         self.background_session_factory = sessionmaker(
@@ -166,6 +168,12 @@ class WebhookIngestionService:
                 "telegram_route": filter_result.route.value,
             }
         )
+
+        if config.get("auto_create_open_outcomes") and filter_result.final_decision in (
+            DecisionType.PASS_MAIN,
+            DecisionType.PASS_WARNING,
+        ):
+            self.outcome_repo.create_open_from_signal(signal_obj)
 
         notification_job = self._build_notification_job(norm_data, signal_obj.id, filter_result, config)
         self.db.commit()
