@@ -14,6 +14,7 @@ from app.api.dependencies import require_dashboard_auth
 from app.core.config import settings
 from app.repositories.config_repo import ConfigRepository
 from app.services.reject_codes import rule_code_to_reject_code
+from app.services.calibration_report import build_calibration_report
 
 _ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
 _ALLOWED_OUTCOME_GROUP_BY = frozenset([
@@ -432,6 +433,41 @@ def export_outcomes_csv(
             "",
         ])
     return Response(content=output.getvalue(), media_type="text/csv")
+
+
+@router.get("/calibration/report")
+def get_calibration_report(
+    days: int = Query(90, ge=1, le=365),
+    min_samples: int = Query(30, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.execute(
+        select(
+            Signal.timeframe,
+            Signal.signal_type,
+            SignalOutcome.r_multiple,
+            SignalOutcome.is_win,
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+    ).all()
+
+    payload_rows = [
+        {
+            "timeframe": row.timeframe,
+            "signal_type": row.signal_type,
+            "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
+            "is_win": row.is_win,
+        }
+        for row in rows
+    ]
+    report = build_calibration_report(payload_rows, min_samples=min_samples)
+    return {
+        "period_days": days,
+        **report,
+    }
 
 
 @router.get("/summary")
