@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+from io import StringIO
+import csv
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, case, cast, Date, text
 
@@ -354,6 +356,82 @@ def get_ops_command_center(
         "recent_outcomes": recent_outcomes,
         "calibration_insights": [],
     }
+
+
+@router.get("/export/outcomes.csv")
+def export_outcomes_csv(
+    days: int = Query(90, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.execute(
+        select(
+            Signal.signal_id,
+            Signal.created_at,
+            SignalOutcome.closed_at,
+            Signal.symbol,
+            Signal.timeframe,
+            Signal.side,
+            Signal.signal_type,
+            Signal.strategy,
+            SignalDecision.decision,
+            SignalDecision.telegram_route,
+            Signal.entry_price,
+            Signal.stop_loss,
+            Signal.take_profit,
+            SignalOutcome.exit_price,
+            SignalOutcome.close_reason,
+            SignalOutcome.is_win,
+            SignalOutcome.pnl_pct,
+            SignalOutcome.r_multiple,
+            Signal.regime,
+            Signal.vol_regime,
+            Signal.indicator_confidence,
+            Signal.server_score,
+        )
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .outerjoin(SignalOutcome, SignalOutcome.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since)
+        .order_by(Signal.created_at.desc())
+    ).all()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "signal_id","created_at","closed_at","symbol","timeframe","side","signal_type","strategy",
+        "decision","telegram_route","entry_price","stop_loss","take_profit","exit_price","close_reason",
+        "is_win","pnl_pct","r_multiple","regime","vol_regime","indicator_confidence","server_score",
+        "failed_rules","warn_rules",
+    ])
+    for row in rows:
+        writer.writerow([
+            row.signal_id,
+            row.created_at.isoformat() if row.created_at else "",
+            row.closed_at.isoformat() if row.closed_at else "",
+            row.symbol,
+            row.timeframe,
+            row.side,
+            row.signal_type,
+            row.strategy,
+            row.decision,
+            row.telegram_route,
+            float(row.entry_price) if row.entry_price is not None else "",
+            float(row.stop_loss) if row.stop_loss is not None else "",
+            float(row.take_profit) if row.take_profit is not None else "",
+            float(row.exit_price) if row.exit_price is not None else "",
+            row.close_reason,
+            row.is_win,
+            float(row.pnl_pct) if row.pnl_pct is not None else "",
+            float(row.r_multiple) if row.r_multiple is not None else "",
+            row.regime,
+            row.vol_regime,
+            float(row.indicator_confidence) if row.indicator_confidence is not None else "",
+            float(row.server_score) if row.server_score is not None else "",
+            "",
+            "",
+        ])
+    return Response(content=output.getvalue(), media_type="text/csv")
 
 
 @router.get("/summary")
