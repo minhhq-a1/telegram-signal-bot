@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.enums import DecisionType, DeliveryStatus, TelegramRoute
-from app.domain.models import Signal, SignalDecision, SignalOutcome, TelegramMessage, WebhookEvent
+from app.domain.models import Signal, SignalDecision, SignalFilterResult, SignalOutcome, TelegramMessage, WebhookEvent
 
 pytestmark = pytest.mark.integration
 
@@ -126,6 +126,19 @@ def test_ops_command_center_returns_signal_and_outcome_data(client: TestClient, 
             created_at=now,
         )
     )
+    db_session.add(
+        SignalFilterResult(
+            id=str(uuid.uuid4()),
+            signal_row_id=sig.id,
+            rule_code="LOW_VOLUME_WARNING",
+            rule_group="trading",
+            result="WARN",
+            severity="MEDIUM",
+            score_delta=0.0,
+            details={},
+            created_at=now,
+        )
+    )
     db_session.commit()
 
     resp = client.get("/api/v1/analytics/ops-command-center", headers={"Authorization": "Bearer test-dash-token"})
@@ -136,3 +149,6 @@ def test_ops_command_center_returns_signal_and_outcome_data(client: TestClient, 
     assert body["ops_snapshot"]["win_rate"] == 1.0
     assert body["recent_signals"][0]["signal_id"] == "cmd-center-sig"
     assert body["recent_outcomes"][0]["signal_id"] == "cmd-center-sig"
+    assert body["performance"]["main_vs_warn"][0]["decision"] == "PASS_MAIN"
+    assert body["performance"]["by_timeframe"][0]["timeframe"] == "5m"
+    assert body["performance"]["rule_performance"][0]["rule_code"] == "LOW_VOLUME_WARNING"

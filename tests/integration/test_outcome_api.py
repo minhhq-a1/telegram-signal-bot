@@ -53,6 +53,25 @@ def test_close_outcome_updates_existing_open_row(client, make_stored_signal):
     assert body["outcome_status"] == "CLOSED"
     assert body["close_reason"] == "TP_HIT"
     assert float(body["exit_price"]) == 74000.0
+    assert body["is_win"] is True
+    assert round(float(body["pnl_pct"]), 4) == round(((74988.60 - 74000.0) / 74988.60) * 100, 4)
+    assert round(float(body["r_multiple"]), 4) == round((74988.60 - 74000.0) / (75429.33 - 74988.60), 4)
+
+def test_close_outcome_invalid_reason_returns_400(client, make_stored_signal):
+    signal = make_stored_signal(original_decision="PASS_MAIN")
+
+    resp = client.put(
+        f"/api/v1/signals/{signal.signal_id}/outcome",
+        headers=_auth_headers(),
+        json={
+            "exit_price": 74000.0,
+            "closed_at": "2026-04-30T10:15:00Z",
+            "close_reason": "BAD_REASON",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["error_code"] == "INVALID_CLOSE_REASON"
 
 
 def test_recent_outcomes_requires_auth(client):

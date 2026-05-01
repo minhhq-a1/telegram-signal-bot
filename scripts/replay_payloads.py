@@ -39,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Replay payload JSON files through normalizer + filter engine")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--config-db-key", default="signal_bot_config")
     parser.add_argument("--dry-run", default="true")
     parser.add_argument("--persist", default="false")
     return parser
@@ -49,6 +50,8 @@ def main() -> int:
     input_path = Path(args.input)
     output_path = Path(args.output)
     files = _load_paths(input_path)
+    dry_run = str(args.dry_run).lower() == "true"
+    persist = str(args.persist).lower() == "true"
 
     config = ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG
     engine = FilterEngine(config, _NoopSignalRepo(), _NoopMarketRepo())
@@ -68,6 +71,9 @@ def main() -> int:
                     "decision": result.final_decision.value,
                     "route": result.route.value,
                     "decision_reason": result.decision_reason,
+                    "config_db_key": args.config_db_key,
+                    "dry_run": dry_run,
+                    "persisted": False if not persist else False,
                 }
             except Exception as exc:
                 record = {

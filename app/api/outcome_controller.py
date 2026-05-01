@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.domain.schemas import OutcomeListResponse, OutcomeOpenRequest, OutcomeUpsertRequest, SignalOutcomeSchema
 from app.repositories.outcome_repo import OutcomeRepository
 from app.repositories.signal_repo import SignalRepository
+from app.services.outcome_math import OutcomeMathError
 
 router = APIRouter(tags=["outcomes"])
 
@@ -48,15 +49,18 @@ def close_signal_outcome(
         raise HTTPException(status_code=400, detail={"error_code": "INVALID_OUTCOME_VALUES", "message": "Reject outcomes require allow_reject_outcome=true"})
 
     repo = OutcomeRepository(db)
-    outcome = repo.upsert_closed_outcome(
-        signal=signal,
-        exit_price=payload.exit_price,
-        closed_at=payload.closed_at,
-        close_reason=payload.close_reason,
-        max_favorable_price=payload.max_favorable_price,
-        max_adverse_price=payload.max_adverse_price,
-        notes=payload.notes,
-    )
+    try:
+        outcome = repo.upsert_closed_outcome(
+            signal=signal,
+            exit_price=payload.exit_price,
+            closed_at=payload.closed_at,
+            close_reason=payload.close_reason,
+            max_favorable_price=payload.max_favorable_price,
+            max_adverse_price=payload.max_adverse_price,
+            notes=payload.notes,
+        )
+    except OutcomeMathError as exc:
+        raise HTTPException(status_code=400, detail={"error_code": exc.error_code, "message": exc.message}) from exc
     db.commit()
     db.refresh(outcome)
     return outcome

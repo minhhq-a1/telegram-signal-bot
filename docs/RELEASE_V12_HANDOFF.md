@@ -124,6 +124,89 @@ Unit-level verification đã chạy nhiều lần xuyên suốt rollout, đặc 
 
 Integration-scope commands cũng đã được chạy cho các slices liên quan, nhưng phần lớn đang `skip` khi thiếu biến môi trường `INTEGRATION_DATABASE_URL`.
 
+### 2026-05-01 follow-up verification
+
+Sau review release handoff, đã chạy lại verification trên PostgreSQL local từ `docker-compose.yml`:
+
+```bash
+INTEGRATION_DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5432/signal_bot' \
+  rtk .venv/bin/python -m pytest tests/integration -q
+```
+
+Kết quả:
+
+```text
+114 passed in 78.83s (0:01:18)
+```
+
+Migration idempotency/status cũng đã chạy với DB local:
+
+```bash
+DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5432/signal_bot' \
+  rtk .venv/bin/python scripts/db/migrate.py apply
+DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5432/signal_bot' \
+  rtk .venv/bin/python scripts/db/migrate.py status
+```
+
+Kết quả:
+
+```text
+skip all migrations (already applied)
+ok migrations applied
+applied 001 001_init.sql
+applied 002 002_add_ops_migration_baseline.sql
+applied 003 003_v11_upgrade.sql
+applied 004 004_query_indexes.sql
+applied 005 005_v11_config_idempotency_repair.sql
+applied 006 006_v12_observability.sql
+applied 007 007_v12_signal_outcomes.sql
+applied 008 008_v12_config_audit.sql
+applied 009 009_v12_market_context.sql
+```
+
+Unit/full local suite sau fixes:
+
+```bash
+rtk .venv/bin/python -m pytest -q
+```
+
+Kết quả trước khi bật integration env:
+
+```text
+141 passed, 114 skipped in 2.43s
+```
+
+Full suite với integration env bật sau follow-up fixes:
+
+```bash
+INTEGRATION_DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5432/signal_bot' \
+  rtk .venv/bin/python -m pytest -q
+```
+
+Kết quả:
+
+```text
+255 passed in 85.38s (0:01:25)
+```
+
+Local smoke sau khi tạo `.env` local từ `.env.example` và reset migration metadata DB local:
+
+```bash
+rtk bash scripts/smoke_local.sh
+```
+
+Kết quả:
+
+```text
+valid: HTTP 200
+duplicate: HTTP 200
+invalid_json: HTTP 400
+invalid_schema: HTTP 400
+Smoke local completed successfully.
+```
+
+Lưu ý vận hành local: integration fixture có thể `drop_all()` app tables nhưng để lại `schema_migrations`; nếu dùng lại cùng database cho smoke sau integration, cần reset DB/migration metadata hoặc dùng DB riêng cho integration.
+
 ---
 
 ## Final verification still recommended
@@ -137,6 +220,8 @@ bash scripts/smoke_local.sh
 python3 scripts/db/migrate.py apply
 python3 scripts/db/migrate.py status
 ```
+
+Ghi chú: integration và migration replay đã pass trên PostgreSQL local ngày 2026-05-01; vẫn nên chạy lại trên staging/pre-prod trước merge chính thức.
 
 Nếu có staging/pre-prod:
 
@@ -165,4 +250,3 @@ Nếu có staging/pre-prod:
 2. Chạy smoke + migration replay trên `release/1.2`
 3. Review UI/UX dashboard trên browser thật
 4. Mở PR: `release/1.2 -> main`
-

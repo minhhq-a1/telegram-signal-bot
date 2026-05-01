@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.models import Signal, SignalOutcome
+from app.services.outcome_math import compute_closed_outcome_metrics
 
 
 class OutcomeRepository:
@@ -60,13 +61,30 @@ class OutcomeRepository:
         if outcome is None:
             outcome = self.create_open_from_signal(signal)
 
+        entry_price = float(outcome.entry_price or signal.entry_price)
+        stop_loss = float(outcome.stop_loss or signal.stop_loss)
+        metrics = compute_closed_outcome_metrics(
+            side=signal.side.value if hasattr(signal.side, "value") else str(signal.side),
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            exit_price=float(exit_price),
+            close_reason=close_reason,
+            max_favorable_price=float(max_favorable_price) if max_favorable_price is not None else None,
+            max_adverse_price=float(max_adverse_price) if max_adverse_price is not None else None,
+        )
+
         outcome.outcome_status = "CLOSED"
-        outcome.close_reason = close_reason
+        outcome.close_reason = metrics["close_reason"]
+        outcome.is_win = metrics["is_win"]
         outcome.exit_price = exit_price
         outcome.closed_at = closed_at
         outcome.updated_at = datetime.now(timezone.utc)
         outcome.max_favorable_price = max_favorable_price
         outcome.max_adverse_price = max_adverse_price
+        outcome.mfe_pct = metrics["mfe_pct"]
+        outcome.mae_pct = metrics["mae_pct"]
+        outcome.pnl_pct = metrics["pnl_pct"]
+        outcome.r_multiple = metrics["r_multiple"]
         outcome.notes = notes
         self.db.flush()
         return outcome

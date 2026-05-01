@@ -72,13 +72,19 @@ def get_outcome_summary(
             "avg_r": round(float(row.avg_r or 0), 4),
         }
 
+    median_r = db.execute(
+        select(func.percentile_cont(0.5).within_group(SignalOutcome.r_multiple))
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+    ).scalar_one_or_none()
+
     return {
         "period_days": days,
         "closed_outcomes": closed_outcomes,
         "open_outcomes": open_outcomes,
         "win_rate": round((win_count / closed_outcomes), 4) if closed_outcomes else 0.0,
         "avg_r_multiple": round(float(totals.avg_r or 0), 4),
-        "median_r_multiple": 0.0,
+        "median_r_multiple": round(float(median_r or 0), 4),
         "total_r_multiple": round(float(totals.total_r or 0), 4),
         "avg_pnl_pct": round(float(totals.avg_pnl or 0), 4),
         "by_decision": by_decision,
@@ -319,7 +325,9 @@ def get_ops_command_center(
             }
         )
 
-    config_version = 1 if ConfigRepository(db).get_signal_bot_config() else 0
+    _, config_version = ConfigRepository(db).get_signal_bot_config_with_version()
+    performance = _build_ops_performance(db, since)
+    calibration_insights = _build_ops_calibration_insights(performance)
 
     return {
         "period_days": days,
@@ -347,16 +355,130 @@ def get_ops_command_center(
             "total_r": round(float(outcome_row.total_r or 0), 4),
         },
         "alerts": alerts,
-        "performance": {
-            "main_vs_warn": [],
-            "by_timeframe": [],
-            "by_signal_type": [],
-            "rule_performance": [],
-        },
+        "performance": performance,
         "recent_signals": recent_signals,
         "recent_outcomes": recent_outcomes,
-        "calibration_insights": [],
+        "calibration_insights": calibration_insights,
     }
+
+
+def _build_ops_performance(db: Session, since: datetime) -> dict[str, list[dict]]:
+    main_vs_warn = _outcome_group_rows(
+        db,
+        since,
+        [SignalDecision.decision.label("decision")],
+        [SignalDecision.decision],
+    )
+    by_timeframe = _outcome_group_rows(
+        db,
+        since,
+        [Signal.timeframe.label("timeframe")],
+        [Signal.timeframe],
+    )
+    by_signal_type = _outcome_group_rows(
+        db,
+        since,
+        [Signal.signal_type.label("signal_type")],
+        [Signal.signal_type],
+    )
+
+    rule_rows = db.execute(
+        select(
+            SignalFilterResult.rule_code,
+            SignalFilterResult.result,
+            SignalFilterResult.severity,
+            func.count(SignalFilterResult.id).label("signals"),
+            func.count(SignalOutcome.id).label("closed_outcomes"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r"),
+        )
+        .join(Signal, Signal.id == SignalFilterResult.signal_row_id)
+        .outerjoin(
+            SignalOutcome,
+            (SignalOutcome.signal_row_id == Signal.id) & (SignalOutcome.outcome_status == "CLOSED"),
+        )
+        .where(Signal.created_at >= since)
+        .group_by(SignalFilterResult.rule_code, SignalFilterResult.result, SignalFilterResult.severity)
+        .order_by(SignalFilterResult.rule_code)
+        .limit(25)
+    ).all()
+    rule_performance = []
+    for row in rule_rows:
+        closed = int(row.closed_outcomes or 0)
+        rule_performance.append(
+            {
+                "rule_code": row.rule_code,
+                "result": row.result,
+                "severity": row.severity,
+                "signals": int(row.signals or 0),
+                "closed_outcomes": closed,
+                "win_rate": round((int(row.wins or 0) / closed), 4) if closed else 0.0,
+                "avg_r": round(float(row.avg_r or 0), 4),
+            }
+        )
+
+    return {
+        "main_vs_warn": main_vs_warn,
+        "by_timeframe": by_timeframe,
+        "by_signal_type": by_signal_type,
+        "rule_performance": rule_performance,
+    }
+
+
+def _outcome_group_rows(db: Session, since: datetime, select_cols: list, group_cols: list) -> list[dict]:
+    rows = db.execute(
+        select(
+            *select_cols,
+            func.count(SignalOutcome.id).label("closed_outcomes"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r"),
+            func.sum(SignalOutcome.r_multiple).label("total_r"),
+        )
+        .select_from(SignalOutcome)
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+        .group_by(*group_cols)
+        .order_by(func.count(SignalOutcome.id).desc())
+        .limit(25)
+    ).all()
+    result = []
+    for row in rows:
+        item = dict(row._mapping)
+        closed = int(item.pop("closed_outcomes") or 0)
+        wins = int(item.pop("wins") or 0)
+        item["closed_outcomes"] = closed
+        item["win_rate"] = round((wins / closed), 4) if closed else 0.0
+        item["avg_r"] = round(float(item.pop("avg_r") or 0), 4)
+        item["total_r"] = round(float(item.pop("total_r") or 0), 4)
+        result.append(item)
+    return result
+
+
+def _build_ops_calibration_insights(performance: dict[str, list[dict]]) -> list[dict]:
+    insights = []
+    for row in performance.get("by_timeframe", []):
+        samples = int(row.get("closed_outcomes") or 0)
+        avg_r = float(row.get("avg_r") or 0)
+        if samples < 30:
+            recommendation = "INSUFFICIENT_DATA"
+        elif avg_r < 0:
+            recommendation = "REVIEW_TIGHTEN"
+        elif avg_r < 0.1:
+            recommendation = "WATCH"
+        else:
+            recommendation = "KEEP"
+        insights.append(
+            {
+                "bucket": {"timeframe": row.get("timeframe")},
+                "samples": samples,
+                "win_rate": row.get("win_rate", 0.0),
+                "avg_r": avg_r,
+                "recommendation": recommendation,
+                "confidence": "LOW" if samples < 60 else "MEDIUM",
+            }
+        )
+    return insights
 
 
 @router.get("/export/outcomes.csv")
@@ -443,16 +565,34 @@ def get_calibration_report(
     _auth: None = Depends(require_dashboard_auth),
 ):
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    rows = db.execute(
+    outcome_rows = db.execute(
         select(
+            Signal.id,
             Signal.timeframe,
             Signal.signal_type,
             SignalOutcome.r_multiple,
             SignalOutcome.is_win,
+            Signal.indicator_confidence,
         )
         .join(Signal, Signal.id == SignalOutcome.signal_row_id)
         .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
     ).all()
+
+    signal_ids = [row.id for row in outcome_rows]
+    filter_rows_by_signal: dict[str, list[dict]] = {signal_id: [] for signal_id in signal_ids}
+    if signal_ids:
+        filter_rows = db.execute(
+            select(
+                SignalFilterResult.signal_row_id,
+                SignalFilterResult.rule_code,
+                SignalFilterResult.result,
+                SignalFilterResult.severity,
+            ).where(SignalFilterResult.signal_row_id.in_(signal_ids))
+        ).all()
+        for row in filter_rows:
+            filter_rows_by_signal.setdefault(row.signal_row_id, []).append(
+                {"rule_code": row.rule_code, "result": row.result, "severity": row.severity}
+            )
 
     payload_rows = [
         {
@@ -460,8 +600,10 @@ def get_calibration_report(
             "signal_type": row.signal_type,
             "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
             "is_win": row.is_win,
+            "indicator_confidence": float(row.indicator_confidence) if row.indicator_confidence is not None else None,
+            "filter_results": filter_rows_by_signal.get(row.id, []),
         }
-        for row in rows
+        for row in outcome_rows
     ]
     report = build_calibration_report(payload_rows, min_samples=min_samples)
     return {
