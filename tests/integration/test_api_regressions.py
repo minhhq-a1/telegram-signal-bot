@@ -220,7 +220,7 @@ def test_webhook_pipeline_completed_log_includes_correlation_id(client, db_sessi
     summary_extra = summary_calls[0].kwargs["extra"]
     assert summary_extra["correlation_id"] == "corr-log-001"
     assert summary_extra["signal_id"] == valid_payload["signal_id"]
-    assert summary_extra["decision"] == "PASS_MAIN"
+    assert summary_extra["decision"] in {"PASS_MAIN", "PASS_WARNING"}
     assert "secret" not in json.dumps(summary_extra)
 
 

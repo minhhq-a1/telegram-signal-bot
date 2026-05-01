@@ -5,6 +5,12 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def set_dashboard_token(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "dashboard_token", "test-dash-token")
+
+
 def test_outcome_export_requires_auth(client):
     resp = client.get("/api/v1/analytics/export/outcomes.csv")
     assert resp.status_code == 401

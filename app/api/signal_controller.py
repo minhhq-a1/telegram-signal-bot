@@ -178,7 +178,9 @@ def reverify_signal(
 
 
 @router.post("/api/v1/signals/reverify/batch")
+@limiter.limit("10/minute")
 def reverify_signals_batch(
+    request: Request,
     payload: dict,
     db: Session = Depends(get_db),
     _auth: None = Depends(require_dashboard_auth),
