@@ -139,11 +139,12 @@ class WebhookIngestionService:
             self.db.commit()
             return self._accepted_result(payload.signal_id, DecisionType.DUPLICATE)
 
-        config = self.config_repo.get_signal_bot_config()
+        config, config_version = self.config_repo.get_signal_bot_config_with_version()
         engine = FilterEngine(config, self.signal_repo, self.market_repo)
         filter_result = engine.run(norm_data)
 
         signal_obj.server_score = filter_result.server_score
+        signal_obj.config_version = config_version
 
         self.filter_repo.bulk_insert(
             [

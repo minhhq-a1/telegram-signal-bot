@@ -25,6 +25,7 @@ class Signal(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     webhook_event_id: Mapped[str | None] = mapped_column(ForeignKey("webhook_events.id"), nullable=True)
     correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    config_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     signal_id: Mapped[str] = mapped_column(String(128), unique=True)
     source: Mapped[str] = mapped_column(String(64))
     symbol: Mapped[str] = mapped_column(String(32))
@@ -148,8 +149,21 @@ class SystemConfig(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     config_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     config_value: Mapped[dict] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer, default=1)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class SystemConfigAuditLog(Base):
+    __tablename__ = "system_config_audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    config_key: Mapped[str] = mapped_column(String(128))
+    old_value: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[dict] = mapped_column(JSON)
+    changed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    change_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class SignalReverifyResult(Base):
     __tablename__ = "signal_reverify_results"
