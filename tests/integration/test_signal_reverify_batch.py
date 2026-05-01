@@ -32,6 +32,10 @@ def test_batch_reverify_enforces_limit(client):
 def test_batch_reverify_returns_results(client, make_stored_signal):
     sig1 = make_stored_signal(signal_type="SHORT_SQUEEZE", strategy="KELTNER_SQUEEZE")
     sig2 = make_stored_signal(signal_type="SHORT_SQUEEZE", strategy="KELTNER_SQUEEZE")
+    sig1.signal_type = "SHORT_SQUEEZE"
+    sig1.strategy = "KELTNER_SQUEEZE"
+    sig2.signal_type = "SHORT_SQUEEZE"
+    sig2.strategy = "KELTNER_SQUEEZE"
 
     resp = client.post(
         "/api/v1/signals/reverify/batch",
