@@ -193,3 +193,22 @@ class MarketEvent(Base):
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     impact: Mapped[str] = mapped_column(String(20)) # HIGH, MEDIUM, LOW
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MarketContextSnapshot(Base):
+    __tablename__ = "market_context_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    timeframe: Mapped[str] = mapped_column(String(16))
+    bar_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    backend_regime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backend_vol_regime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ema_fast: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    ema_mid: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    ema_slow: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    atr_pct: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    volume_ratio: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    source: Mapped[str] = mapped_column(String(64))
+    raw_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
