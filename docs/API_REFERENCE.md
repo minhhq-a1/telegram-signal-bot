@@ -1,7 +1,7 @@
 # API Reference — Signal Bot V1.1
 
 **Base URL:** `https://your-domain.com`
-**API Version:** `v1` (app `1.1.0`)
+**API Version:** `v1` (app `1.2.0`)
 **Auth:** Shared secret trong request body (không dùng Authorization header)
 
 ---
@@ -28,7 +28,7 @@ Kiểm tra service còn sống.
 {
   "status": "ok",
   "service": "telegram-signal-bot",
-  "version": "1.1.0"
+  "version": "1.2.0"
 }
 ```
 
