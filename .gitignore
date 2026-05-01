@@ -37,6 +37,8 @@ postgres_data/
 # AI Agent Settings
 .antigravity/
 .cursor/
+.agents/plugins/
+plugins/
 
 # Database files (Integration tests)
 *.db

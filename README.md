@@ -64,7 +64,7 @@ app/
 │   └── rate_limiter.py
 ├── core/
 │   ├── config.py           # Pydantic settings từ .env
-│   ├── enums.py            # SignalSide, DecisionType, RuleResult...
+│   ├── enums.py            # SignalSide, DecisionType, RuleResult, etc.
 │   ├── logging.py          # Structured logging
 │   └── database.py         # SQLAlchemy engine + session
 ├── domain/
@@ -145,13 +145,13 @@ docker compose up -d db
 Repo hiện dùng **raw SQL versioned flow** với runner chính thức:
 
 ```bash
-python scripts/db/migrate.py apply
+python3 scripts/db/migrate.py apply
 ```
 
 Kiểm tra trạng thái migration:
 
 ```bash
-python scripts/db/migrate.py status
+python3 scripts/db/migrate.py status
 ```
 
 Chi tiết xem thêm:
@@ -160,7 +160,6 @@ Chi tiết xem thêm:
 
 ### 4. Cài dependencies
 
-```bash
 ```bash
 # Cài đặt (khuyến nghị dùng venv)
 python3 -m venv .venv
@@ -200,7 +199,7 @@ curl -X POST http://localhost:8080/api/v1/webhooks/tradingview \
 ### 8. Chạy test
 
 ```bash
-./.venv/bin/python -m pytest -q
+python3 -m pytest -q
 ```
 
 ### 9. Chạy full stack bằng Compose (optional)
@@ -302,3 +301,13 @@ Bot nhận alert từ **TradingView indicator Bot Webhook v8.4 [BTC]**:
 - [CHANGELOG_V1.1.md](./docs/CHANGELOG_V1.1.md) — V1.1 changes
 - [POST_V11_OPTIMIZATION_PLAN.md](./docs/POST_V11_OPTIMIZATION_PLAN.md) — Post-V1.1 backlog/context
 - [CURSOR_CONTEXT.md](./docs/CURSOR_CONTEXT.md) — Context tổng hợp cho AI assistant
+
+
+## Verify Commands
+
+```bash
+python3 -m pytest tests/unit -q
+python3 -m pytest tests/integration -q
+python3 -m pytest -q
+bash scripts/smoke_local.sh
+```

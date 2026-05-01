@@ -10,6 +10,7 @@ class WebhookEvent(Base):
     __tablename__ = "webhook_events"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     source_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     http_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -23,6 +24,8 @@ class Signal(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     webhook_event_id: Mapped[str | None] = mapped_column(ForeignKey("webhook_events.id"), nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    config_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     signal_id: Mapped[str] = mapped_column(String(128), unique=True)
     source: Mapped[str] = mapped_column(String(64))
     symbol: Mapped[str] = mapped_column(String(32))
@@ -119,10 +122,23 @@ class SignalOutcome(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     signal_row_id: Mapped[str] = mapped_column(ForeignKey("signals.id", ondelete="CASCADE"), unique=True)
+    outcome_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    close_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_win: Mapped[bool | None] = mapped_column(nullable=True)
+    entry_price: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    max_favorable_price: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    max_adverse_price: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    mfe_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    mae_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     pnl_pct: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    r_multiple: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     signal: Mapped["Signal"] = relationship(back_populates="outcomes")
@@ -133,8 +149,21 @@ class SystemConfig(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     config_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     config_value: Mapped[dict] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer, default=1)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class SystemConfigAuditLog(Base):
+    __tablename__ = "system_config_audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    config_key: Mapped[str] = mapped_column(String(128))
+    old_value: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[dict] = mapped_column(JSON)
+    changed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    change_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class SignalReverifyResult(Base):
     __tablename__ = "signal_reverify_results"
@@ -163,4 +192,23 @@ class MarketEvent(Base):
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     impact: Mapped[str] = mapped_column(String(20)) # HIGH, MEDIUM, LOW
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MarketContextSnapshot(Base):
+    __tablename__ = "market_context_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    timeframe: Mapped[str] = mapped_column(String(16))
+    bar_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    backend_regime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backend_vol_regime: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ema_fast: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    ema_mid: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    ema_slow: Mapped[float | None] = mapped_column(Numeric(18, 8), nullable=True)
+    atr_pct: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
+    volume_ratio: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    source: Mapped[str] = mapped_column(String(64))
+    raw_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

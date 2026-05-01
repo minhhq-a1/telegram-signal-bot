@@ -1,16 +1,22 @@
-.PHONY: smoke-local test db-migrate db-migration-status restore-drill
+.PHONY: test-unit test-integration test smoke-local migrate db-migration-status restore-drill
 
-smoke-local:
-	bash ./scripts/smoke_local.sh
+test-unit:
+	python3 -m pytest tests/unit -q
+
+test-integration:
+	python3 -m pytest tests/integration -q
 
 test:
-	./.venv/bin/python -m pytest -q
+	python3 -m pytest -q
 
-db-migrate:
-	./.venv/bin/python scripts/db/migrate.py apply
+smoke-local:
+	bash scripts/smoke_local.sh
+
+migrate:
+	python3 scripts/db/migrate.py apply
 
 db-migration-status:
-	./.venv/bin/python scripts/db/migrate.py status
+	python3 scripts/db/migrate.py status
 
 restore-drill:
-	bash ./scripts/db/restore_drill.sh
+	bash scripts/db/restore_drill.sh

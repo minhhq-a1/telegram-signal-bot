@@ -1,9 +1,11 @@
 import copy
 import time
+import uuid
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from app.domain.models import SystemConfig
+from app.domain.models import SystemConfig, SystemConfigAuditLog
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -130,6 +132,7 @@ class ConfigRepository:
                 },
             },
         },
+        "auto_create_open_outcomes": False,
     }
 
     def __init__(self, db: Session):
@@ -168,3 +171,55 @@ class ConfigRepository:
         
         logger.warning("signal_bot_config_not_found_in_db")
         return copy.deepcopy(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG)
+
+    def get_signal_bot_config_with_version(self) -> tuple[dict, int]:
+        stmt = select(SystemConfig).where(SystemConfig.config_key == "signal_bot_config")
+        config_record = self.db.execute(stmt).scalar_one_or_none()
+        if config_record and config_record.config_value:
+            return (
+                _deep_merge(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG, config_record.config_value),
+                int(config_record.version or 1),
+            )
+        return copy.deepcopy(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG), 1
+
+    def update_config_with_audit(
+        self,
+        config_key: str,
+        new_value: dict,
+        changed_by: str,
+        change_reason: str,
+    ) -> SystemConfig:
+        stmt = select(SystemConfig).where(SystemConfig.config_key == config_key)
+        config = self.db.execute(stmt).scalar_one_or_none()
+        if config is None:
+            config = SystemConfig(
+                id=str(uuid.uuid4()),
+                config_key=config_key,
+                config_value=new_value,
+                version=1,
+                updated_at=datetime.now(timezone.utc),
+            )
+            self.db.add(config)
+            old_value = None
+        else:
+            old_value = copy.deepcopy(config.config_value)
+            config.config_value = new_value
+            config.version = int(config.version or 1) + 1
+            config.updated_at = datetime.now(timezone.utc)
+
+        self.db.add(SystemConfigAuditLog(
+            id=str(uuid.uuid4()),
+            config_key=config_key,
+            old_value=old_value,
+            new_value=new_value,
+            changed_by=changed_by,
+            change_reason=change_reason,
+            created_at=datetime.now(timezone.utc),
+        ))
+        self.db.flush()
+        ConfigRepository.reset_cache()
+        return config
+
+    def list_audit_logs(self, limit: int = 50) -> list[SystemConfigAuditLog]:
+        stmt = select(SystemConfigAuditLog).order_by(SystemConfigAuditLog.created_at.desc()).limit(limit)
+        return list(self.db.execute(stmt).scalars().all())

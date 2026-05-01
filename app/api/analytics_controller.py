@@ -1,19 +1,615 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+from io import StringIO
+import csv
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, case, cast, Date, text
 
 from app.core.database import get_db
-from app.domain.models import Signal, SignalDecision, SignalFilterResult, TelegramMessage, WebhookEvent
+from app.domain.models import Signal, SignalDecision, SignalFilterResult, SignalOutcome, TelegramMessage, WebhookEvent
 from app.api.dependencies import require_dashboard_auth
+from app.core.config import settings
+from app.repositories.config_repo import ConfigRepository
 from app.services.reject_codes import rule_code_to_reject_code
+from app.services.calibration_report import build_calibration_report
 
 _ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
+_ALLOWED_OUTCOME_GROUP_BY = frozenset([
+    "timeframe", "signal_type", "strategy", "side", "decision", "telegram_route", "regime", "vol_regime"
+])
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["analytics"])
+
+
+@router.get("/outcomes/summary")
+def get_outcome_summary(
+    days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    totals = db.execute(
+        select(
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", 1), else_=0)).label("closed_count"),
+            func.sum(case((SignalOutcome.outcome_status == "OPEN", 1), else_=0)).label("open_count"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", case((SignalOutcome.is_win.is_(True), 1), else_=0)), else_=0)).label("win_count"),
+            func.avg(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=None)).label("avg_r"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=0)).label("total_r"),
+            func.avg(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.pnl_pct), else_=None)).label("avg_pnl"),
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since)
+    ).one()
+
+    closed_outcomes = int(totals.closed_count or 0)
+    open_outcomes = int(totals.open_count or 0)
+    win_count = int(totals.win_count or 0)
+
+    by_decision_rows = db.execute(
+        select(
+            SignalDecision.decision,
+            func.count(SignalOutcome.id).label("cnt"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+        )
+        .join(Signal, Signal.id == SignalDecision.signal_row_id)
+        .join(SignalOutcome, SignalOutcome.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+        .group_by(SignalDecision.decision)
+    ).all()
+
+    by_decision: dict[str, dict] = {}
+    for row in by_decision_rows:
+        count = int(row.cnt or 0)
+        wins = int(row.wins or 0)
+        by_decision[row.decision] = {
+            "count": count,
+            "win_rate": round((wins / count), 4) if count else 0.0,
+            "avg_r": round(float(row.avg_r or 0), 4),
+        }
+
+    median_r = db.execute(
+        select(func.percentile_cont(0.5).within_group(SignalOutcome.r_multiple))
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+    ).scalar_one_or_none()
+
+    return {
+        "period_days": days,
+        "closed_outcomes": closed_outcomes,
+        "open_outcomes": open_outcomes,
+        "win_rate": round((win_count / closed_outcomes), 4) if closed_outcomes else 0.0,
+        "avg_r_multiple": round(float(totals.avg_r or 0), 4),
+        "median_r_multiple": round(float(median_r or 0), 4),
+        "total_r_multiple": round(float(totals.total_r or 0), 4),
+        "avg_pnl_pct": round(float(totals.avg_pnl or 0), 4),
+        "by_decision": by_decision,
+    }
+
+
+@router.get("/outcomes/by-bucket")
+def get_outcome_buckets(
+    days: int = Query(30, ge=1, le=90),
+    group_by: str = Query("timeframe,signal_type"),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    tokens = [t.strip() for t in group_by.split(",") if t.strip()]
+    if not tokens or any(t not in _ALLOWED_OUTCOME_GROUP_BY for t in tokens):
+        return Response(status_code=400, content='{"error_code":"INVALID_GROUP_BY","message":"Invalid outcome group_by"}', media_type="application/json")
+
+    column_map = {
+        "timeframe": Signal.timeframe,
+        "signal_type": Signal.signal_type,
+        "strategy": Signal.strategy,
+        "side": Signal.side,
+        "decision": SignalDecision.decision,
+        "telegram_route": SignalDecision.telegram_route,
+        "regime": Signal.regime,
+        "vol_regime": Signal.vol_regime,
+    }
+    select_cols = [column_map[t].label(t) for t in tokens]
+
+    rows = db.execute(
+        select(
+            *select_cols,
+            func.count(SignalOutcome.id).label("count"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r_multiple"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .join(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+        .group_by(*select_cols)
+        .order_by(func.count(SignalOutcome.id).desc())
+    ).all()
+
+    buckets = []
+    for row in rows:
+        count = int(row.count or 0)
+        item = {token: getattr(row, token) for token in tokens}
+        item.update({
+            "count": count,
+            "win_rate": round((int(row.wins or 0) / count), 4) if count else 0.0,
+            "avg_r_multiple": round(float(row.avg_r_multiple or 0), 4),
+        })
+        buckets.append(item)
+
+    return {"period_days": days, "group_by": tokens, "buckets": buckets}
+
+
+@router.get("/outcomes/rules")
+def get_outcome_rules(
+    days: int = Query(30, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.execute(
+        select(
+            SignalFilterResult.rule_code,
+            SignalFilterResult.result,
+            SignalFilterResult.severity,
+            func.count(SignalFilterResult.id).label("signals"),
+            func.count(SignalOutcome.id).label("closed_outcomes"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r_multiple"),
+        )
+        .join(Signal, Signal.id == SignalFilterResult.signal_row_id)
+        .outerjoin(
+            SignalOutcome,
+            (SignalOutcome.signal_row_id == Signal.id) & (SignalOutcome.outcome_status == "CLOSED"),
+        )
+        .where(Signal.created_at >= since)
+        .group_by(SignalFilterResult.rule_code, SignalFilterResult.result, SignalFilterResult.severity)
+        .order_by(SignalFilterResult.rule_code)
+    ).all()
+
+    rules = []
+    for row in rows:
+        closed = int(row.closed_outcomes or 0)
+        rules.append({
+            "rule_code": row.rule_code,
+            "result": row.result,
+            "severity": row.severity,
+            "signals": int(row.signals or 0),
+            "closed_outcomes": closed,
+            "win_rate": round((int(row.wins or 0) / closed), 4) if closed else 0.0,
+            "avg_r_multiple": round(float(row.avg_r_multiple or 0), 4),
+        })
+    return {"period_days": days, "rules": rules}
+
+
+@router.get("/ops-command-center")
+def get_ops_command_center(
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    last_webhook_at = db.execute(select(func.max(WebhookEvent.received_at))).scalar_one_or_none()
+    last_webhook_iso = last_webhook_at.isoformat() if last_webhook_at else None
+    webhook_age_minutes = None
+    if last_webhook_at:
+        webhook_age_minutes = int((datetime.now(timezone.utc) - last_webhook_at).total_seconds() // 60)
+
+    total_signals = db.execute(select(func.count(Signal.id)).where(Signal.created_at >= since)).scalar() or 0
+    decision_rows = db.execute(
+        select(SignalDecision.decision, func.count(SignalDecision.id).label("cnt"))
+        .join(Signal, Signal.id == SignalDecision.signal_row_id)
+        .where(Signal.created_at >= since)
+        .group_by(SignalDecision.decision)
+    ).all()
+    decisions = {row.decision: int(row.cnt or 0) for row in decision_rows}
+
+    tg_row = db.execute(
+        select(
+            func.sum(case((TelegramMessage.delivery_status == "SENT", 1), else_=0)).label("sent_count"),
+            func.sum(case((TelegramMessage.delivery_status == "FAILED", 1), else_=0)).label("failed_count"),
+        )
+        .join(Signal, Signal.id == TelegramMessage.signal_row_id)
+        .where(Signal.created_at >= since)
+    ).one()
+    sent_count = int(tg_row.sent_count or 0)
+    failed_count = int(tg_row.failed_count or 0)
+    tg_total = sent_count + failed_count
+
+    outcome_row = db.execute(
+        select(
+            func.sum(case((SignalOutcome.outcome_status == "OPEN", 1), else_=0)).label("open_count"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", 1), else_=0)).label("closed_count"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", case((SignalOutcome.is_win.is_(True), 1), else_=0)), else_=0)).label("wins"),
+            func.avg(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=None)).label("avg_r"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=0)).label("total_r"),
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since)
+    ).one()
+    open_outcomes = int(outcome_row.open_count or 0)
+    closed_outcomes = int(outcome_row.closed_count or 0)
+    wins = int(outcome_row.wins or 0)
+
+    recent_signal_rows = db.execute(
+        select(
+            Signal.signal_id,
+            Signal.symbol,
+            Signal.timeframe,
+            Signal.side,
+            Signal.signal_type,
+            Signal.strategy,
+            Signal.entry_price,
+            Signal.risk_reward,
+            Signal.indicator_confidence,
+            Signal.created_at,
+            SignalDecision.decision,
+            SignalDecision.decision_reason,
+            SignalDecision.telegram_route,
+        )
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since)
+        .order_by(Signal.created_at.desc())
+        .limit(10)
+    ).all()
+    recent_signals = [
+        {
+            "signal_id": row.signal_id,
+            "symbol": row.symbol,
+            "timeframe": row.timeframe,
+            "side": row.side,
+            "signal_type": row.signal_type,
+            "strategy": row.strategy,
+            "entry_price": float(row.entry_price) if row.entry_price is not None else None,
+            "risk_reward": float(row.risk_reward) if row.risk_reward is not None else None,
+            "confidence": float(row.indicator_confidence) if row.indicator_confidence is not None else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "decision": row.decision,
+            "decision_reason": row.decision_reason,
+            "telegram_route": row.telegram_route,
+        }
+        for row in recent_signal_rows
+    ]
+
+    recent_outcome_rows = db.execute(
+        select(
+            Signal.signal_id,
+            SignalDecision.decision,
+            SignalDecision.telegram_route,
+            Signal.side,
+            Signal.timeframe,
+            Signal.signal_type,
+            SignalOutcome.close_reason,
+            SignalOutcome.r_multiple,
+            SignalOutcome.pnl_pct,
+            SignalOutcome.closed_at,
+            SignalOutcome.outcome_status,
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since)
+        .order_by(SignalOutcome.created_at.desc())
+        .limit(10)
+    ).all()
+    recent_outcomes = [
+        {
+            "signal_id": row.signal_id,
+            "decision": row.decision,
+            "route": row.telegram_route,
+            "side": row.side,
+            "timeframe": row.timeframe,
+            "signal_type": row.signal_type,
+            "close_reason": row.close_reason,
+            "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
+            "pnl_pct": float(row.pnl_pct) if row.pnl_pct is not None else None,
+            "closed_at": row.closed_at.isoformat() if row.closed_at else None,
+            "outcome_status": row.outcome_status,
+        }
+        for row in recent_outcome_rows
+    ]
+
+    alerts = []
+    if webhook_age_minutes is not None and webhook_age_minutes > 30:
+        alerts.append(
+            {
+                "code": "STALE_WEBHOOK",
+                "severity": "MEDIUM",
+                "value": webhook_age_minutes,
+                "threshold": 30,
+                "message": f"Last webhook was {webhook_age_minutes} minutes ago",
+                "action": "Check TradingView alert status",
+            }
+        )
+
+    _, config_version = ConfigRepository(db).get_signal_bot_config_with_version()
+    performance = _build_ops_performance(db, since)
+    calibration_insights = _build_ops_calibration_insights(performance)
+
+    return {
+        "period_days": days,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "health": {
+            "api": "OK",
+            "database": "OK",
+            "config": "OK",
+            "telegram": "OK" if settings.telegram_bot_token else "FAIL",
+            "webhook_freshness": "WARN" if alerts else "OK",
+            "last_webhook_at": last_webhook_iso,
+            "config_version": config_version,
+        },
+        "ops_snapshot": {
+            "total_signals": int(total_signals),
+            "pass_main": decisions.get("PASS_MAIN", 0),
+            "pass_warning": decisions.get("PASS_WARNING", 0),
+            "reject": decisions.get("REJECT", 0),
+            "telegram_sent_rate": round((sent_count / tg_total), 4) if tg_total else 0.0,
+            "telegram_failed": failed_count,
+            "open_outcomes": open_outcomes,
+            "closed_outcomes": closed_outcomes,
+            "win_rate": round((wins / closed_outcomes), 4) if closed_outcomes else 0.0,
+            "avg_r": round(float(outcome_row.avg_r or 0), 4),
+            "total_r": round(float(outcome_row.total_r or 0), 4),
+        },
+        "alerts": alerts,
+        "performance": performance,
+        "recent_signals": recent_signals,
+        "recent_outcomes": recent_outcomes,
+        "calibration_insights": calibration_insights,
+    }
+
+
+def _build_ops_performance(db: Session, since: datetime) -> dict[str, list[dict]]:
+    main_vs_warn = _outcome_group_rows(
+        db,
+        since,
+        [SignalDecision.decision.label("decision")],
+        [SignalDecision.decision],
+    )
+    by_timeframe = _outcome_group_rows(
+        db,
+        since,
+        [Signal.timeframe.label("timeframe")],
+        [Signal.timeframe],
+    )
+    by_signal_type = _outcome_group_rows(
+        db,
+        since,
+        [Signal.signal_type.label("signal_type")],
+        [Signal.signal_type],
+    )
+
+    rule_rows = db.execute(
+        select(
+            SignalFilterResult.rule_code,
+            SignalFilterResult.result,
+            SignalFilterResult.severity,
+            func.count(SignalFilterResult.id).label("signals"),
+            func.count(SignalOutcome.id).label("closed_outcomes"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r"),
+        )
+        .join(Signal, Signal.id == SignalFilterResult.signal_row_id)
+        .outerjoin(
+            SignalOutcome,
+            (SignalOutcome.signal_row_id == Signal.id) & (SignalOutcome.outcome_status == "CLOSED"),
+        )
+        .where(Signal.created_at >= since)
+        .group_by(SignalFilterResult.rule_code, SignalFilterResult.result, SignalFilterResult.severity)
+        .order_by(SignalFilterResult.rule_code)
+        .limit(25)
+    ).all()
+    rule_performance = []
+    for row in rule_rows:
+        closed = int(row.closed_outcomes or 0)
+        rule_performance.append(
+            {
+                "rule_code": row.rule_code,
+                "result": row.result,
+                "severity": row.severity,
+                "signals": int(row.signals or 0),
+                "closed_outcomes": closed,
+                "win_rate": round((int(row.wins or 0) / closed), 4) if closed else 0.0,
+                "avg_r": round(float(row.avg_r or 0), 4),
+            }
+        )
+
+    return {
+        "main_vs_warn": main_vs_warn,
+        "by_timeframe": by_timeframe,
+        "by_signal_type": by_signal_type,
+        "rule_performance": rule_performance,
+    }
+
+
+def _outcome_group_rows(db: Session, since: datetime, select_cols: list, group_cols: list) -> list[dict]:
+    rows = db.execute(
+        select(
+            *select_cols,
+            func.count(SignalOutcome.id).label("closed_outcomes"),
+            func.sum(case((SignalOutcome.is_win.is_(True), 1), else_=0)).label("wins"),
+            func.avg(SignalOutcome.r_multiple).label("avg_r"),
+            func.sum(SignalOutcome.r_multiple).label("total_r"),
+        )
+        .select_from(SignalOutcome)
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+        .group_by(*group_cols)
+        .order_by(func.count(SignalOutcome.id).desc())
+        .limit(25)
+    ).all()
+    result = []
+    for row in rows:
+        item = dict(row._mapping)
+        closed = int(item.pop("closed_outcomes") or 0)
+        wins = int(item.pop("wins") or 0)
+        item["closed_outcomes"] = closed
+        item["win_rate"] = round((wins / closed), 4) if closed else 0.0
+        item["avg_r"] = round(float(item.pop("avg_r") or 0), 4)
+        item["total_r"] = round(float(item.pop("total_r") or 0), 4)
+        result.append(item)
+    return result
+
+
+def _build_ops_calibration_insights(performance: dict[str, list[dict]]) -> list[dict]:
+    insights = []
+    for row in performance.get("by_timeframe", []):
+        samples = int(row.get("closed_outcomes") or 0)
+        avg_r = float(row.get("avg_r") or 0)
+        if samples < 30:
+            recommendation = "INSUFFICIENT_DATA"
+        elif avg_r < 0:
+            recommendation = "REVIEW_TIGHTEN"
+        elif avg_r < 0.1:
+            recommendation = "WATCH"
+        else:
+            recommendation = "KEEP"
+        insights.append(
+            {
+                "bucket": {"timeframe": row.get("timeframe")},
+                "samples": samples,
+                "win_rate": row.get("win_rate", 0.0),
+                "avg_r": avg_r,
+                "recommendation": recommendation,
+                "confidence": "LOW" if samples < 60 else "MEDIUM",
+            }
+        )
+    return insights
+
+
+@router.get("/export/outcomes.csv")
+def export_outcomes_csv(
+    days: int = Query(90, ge=1, le=365),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = db.execute(
+        select(
+            Signal.signal_id,
+            Signal.created_at,
+            SignalOutcome.closed_at,
+            Signal.symbol,
+            Signal.timeframe,
+            Signal.side,
+            Signal.signal_type,
+            Signal.strategy,
+            SignalDecision.decision,
+            SignalDecision.telegram_route,
+            Signal.entry_price,
+            Signal.stop_loss,
+            Signal.take_profit,
+            SignalOutcome.exit_price,
+            SignalOutcome.close_reason,
+            SignalOutcome.is_win,
+            SignalOutcome.pnl_pct,
+            SignalOutcome.r_multiple,
+            Signal.regime,
+            Signal.vol_regime,
+            Signal.indicator_confidence,
+            Signal.server_score,
+        )
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .outerjoin(SignalOutcome, SignalOutcome.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since)
+        .order_by(Signal.created_at.desc())
+    ).all()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "signal_id","created_at","closed_at","symbol","timeframe","side","signal_type","strategy",
+        "decision","telegram_route","entry_price","stop_loss","take_profit","exit_price","close_reason",
+        "is_win","pnl_pct","r_multiple","regime","vol_regime","indicator_confidence","server_score",
+        "failed_rules","warn_rules",
+    ])
+    for row in rows:
+        writer.writerow([
+            row.signal_id,
+            row.created_at.isoformat() if row.created_at else "",
+            row.closed_at.isoformat() if row.closed_at else "",
+            row.symbol,
+            row.timeframe,
+            row.side,
+            row.signal_type,
+            row.strategy,
+            row.decision,
+            row.telegram_route,
+            float(row.entry_price) if row.entry_price is not None else "",
+            float(row.stop_loss) if row.stop_loss is not None else "",
+            float(row.take_profit) if row.take_profit is not None else "",
+            float(row.exit_price) if row.exit_price is not None else "",
+            row.close_reason,
+            row.is_win,
+            float(row.pnl_pct) if row.pnl_pct is not None else "",
+            float(row.r_multiple) if row.r_multiple is not None else "",
+            row.regime,
+            row.vol_regime,
+            float(row.indicator_confidence) if row.indicator_confidence is not None else "",
+            float(row.server_score) if row.server_score is not None else "",
+            "",
+            "",
+        ])
+    return Response(content=output.getvalue(), media_type="text/csv")
+
+
+@router.get("/calibration/report")
+def get_calibration_report(
+    days: int = Query(90, ge=1, le=365),
+    min_samples: int = Query(30, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    outcome_rows = db.execute(
+        select(
+            Signal.id,
+            Signal.timeframe,
+            Signal.signal_type,
+            SignalOutcome.r_multiple,
+            SignalOutcome.is_win,
+            Signal.indicator_confidence,
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+    ).all()
+
+    signal_ids = [row.id for row in outcome_rows]
+    filter_rows_by_signal: dict[str, list[dict]] = {signal_id: [] for signal_id in signal_ids}
+    if signal_ids:
+        filter_rows = db.execute(
+            select(
+                SignalFilterResult.signal_row_id,
+                SignalFilterResult.rule_code,
+                SignalFilterResult.result,
+                SignalFilterResult.severity,
+            ).where(SignalFilterResult.signal_row_id.in_(signal_ids))
+        ).all()
+        for row in filter_rows:
+            filter_rows_by_signal.setdefault(row.signal_row_id, []).append(
+                {"rule_code": row.rule_code, "result": row.result, "severity": row.severity}
+            )
+
+    payload_rows = [
+        {
+            "timeframe": row.timeframe,
+            "signal_type": row.signal_type,
+            "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
+            "is_win": row.is_win,
+            "indicator_confidence": float(row.indicator_confidence) if row.indicator_confidence is not None else None,
+            "filter_results": filter_rows_by_signal.get(row.id, []),
+        }
+        for row in outcome_rows
+    ]
+    report = build_calibration_report(payload_rows, min_samples=min_samples)
+    return {
+        "period_days": days,
+        **report,
+    }
 
 
 @router.get("/summary")

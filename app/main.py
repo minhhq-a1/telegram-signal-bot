@@ -11,6 +11,8 @@ from app.api.health_controller import router as health_router
 from app.api.webhook_controller import router as webhook_router
 from app.api.signal_controller import router as signal_router
 from app.api.analytics_controller import router as analytics_router
+from app.api.outcome_controller import router as outcome_router
+from app.api.config_controller import router as config_router
 from app.api.rate_limiter import limiter, rate_limit_exceeded_handler
 from app.api.dependencies import require_dashboard_auth
 
@@ -24,6 +26,8 @@ app.include_router(health_router)
 app.include_router(webhook_router)
 app.include_router(signal_router)
 app.include_router(analytics_router)
+app.include_router(outcome_router)
+app.include_router(config_router)
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

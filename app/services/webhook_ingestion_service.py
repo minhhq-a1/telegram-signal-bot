@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -21,6 +22,7 @@ from app.repositories.market_event_repo import MarketEventRepository
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.telegram_repo import TelegramRepository
 from app.repositories.webhook_event_repo import WebhookEventRepository
+from app.repositories.outcome_repo import OutcomeRepository
 from app.services.auth_service import AuthService
 from app.services.filter_engine import FilterEngine
 from app.services.message_renderer import MessageRenderer
@@ -64,6 +66,7 @@ class WebhookIngestionService:
         self.decision_repo = decision_repo_cls(db)
         self.telegram_repo_cls = telegram_repo_cls
         self.telegram_repo = telegram_repo_cls(db)
+        self.outcome_repo = OutcomeRepository(db)
         self.config_repo = config_repo_cls(db)
         self.market_repo = market_event_repo_cls(db)
         self.background_session_factory = sessionmaker(
@@ -73,11 +76,14 @@ class WebhookIngestionService:
         )
 
     async def ingest(self, raw_body_text: str, source_ip: str | None, headers: dict[str, Any]) -> WebhookServiceResult:
-        payload_dict = self._parse_json(raw_body_text, source_ip, headers)
+        started_at = datetime.now(timezone.utc)
+        correlation_id = self._resolve_correlation_id(headers)
+
+        payload_dict = self._parse_json(raw_body_text, source_ip, headers, correlation_id)
         if isinstance(payload_dict, WebhookServiceResult):
             return payload_dict
 
-        payload = self._validate_payload(payload_dict, source_ip, headers)
+        payload = self._validate_payload(payload_dict, source_ip, headers, correlation_id)
         if isinstance(payload, WebhookServiceResult):
             return payload
 
@@ -86,6 +92,7 @@ class WebhookIngestionService:
 
         webhook_event = self.webhook_repo.create(
             {
+                "correlation_id": correlation_id,
                 "source_ip": source_ip,
                 "http_headers": redact_sensitive_payload(headers),
                 "raw_body": redact_sensitive_payload(payload.model_dump(mode="json")),
@@ -111,6 +118,7 @@ class WebhookIngestionService:
             return self._accepted_result(payload.signal_id, DecisionType.DUPLICATE)
 
         norm_data = SignalNormalizer.normalize(webhook_event.id, payload)
+        norm_data["correlation_id"] = correlation_id
 
         try:
             with self.db.begin_nested():
@@ -122,16 +130,30 @@ class WebhookIngestionService:
 
             logger.warning(
                 "signal_insert_race_detected",
-                extra={"signal_id": payload.signal_id, "existing_row_id": existing_signal.id},
+                extra={
+                    "signal_id": payload.signal_id,
+                    "existing_row_id": existing_signal.id,
+                    "correlation_id": correlation_id,
+                },
             )
             self.db.commit()
             return self._accepted_result(payload.signal_id, DecisionType.DUPLICATE)
 
         config = self.config_repo.get_signal_bot_config()
+        config_version = 1
+        get_with_version = getattr(self.config_repo, "get_signal_bot_config_with_version", None)
+        if callable(get_with_version):
+            try:
+                _config_with_version, config_version = get_with_version()
+                # Preserve monkeypatched get_signal_bot_config() behavior in tests/callers
+                # while still recording version when available from the repository.
+            except Exception:
+                config_version = 1
         engine = FilterEngine(config, self.signal_repo, self.market_repo)
         filter_result = engine.run(norm_data)
 
         signal_obj.server_score = filter_result.server_score
+        signal_obj.config_version = config_version
 
         self.filter_repo.bulk_insert(
             [
@@ -157,8 +179,21 @@ class WebhookIngestionService:
             }
         )
 
+        if config.get("auto_create_open_outcomes") and filter_result.final_decision in (
+            DecisionType.PASS_MAIN,
+            DecisionType.PASS_WARNING,
+        ):
+            self.outcome_repo.create_open_from_signal(signal_obj)
+
         notification_job = self._build_notification_job(norm_data, signal_obj.id, filter_result, config)
         self.db.commit()
+        self._log_pipeline_summary(
+            correlation_id=correlation_id,
+            signal_id=payload.signal_id,
+            filter_result=filter_result,
+            started_at=started_at,
+            notification_enqueued=notification_job is not None,
+        )
         return self._accepted_result(payload.signal_id, filter_result.final_decision, notification_job)
 
     def _parse_json(
@@ -166,12 +201,14 @@ class WebhookIngestionService:
         raw_body_text: str,
         source_ip: str | None,
         headers: dict[str, Any],
+        correlation_id: str,
     ) -> dict[str, Any] | WebhookServiceResult:
         try:
             return json.loads(raw_body_text)
         except json.JSONDecodeError:
             self.webhook_repo.create(
                 {
+                    "correlation_id": correlation_id,
                     "source_ip": source_ip,
                     "http_headers": redact_sensitive_payload(headers),
                     "raw_body": {"_raw_body_text": "***REDACTED***"},
@@ -194,6 +231,7 @@ class WebhookIngestionService:
         payload_dict: dict[str, Any],
         source_ip: str | None,
         headers: dict[str, Any],
+        correlation_id: str,
     ) -> TradingViewWebhookPayload | WebhookServiceResult:
         try:
             return TradingViewWebhookPayload.model_validate(payload_dict)
@@ -208,6 +246,7 @@ class WebhookIngestionService:
 
             self.webhook_repo.create(
                 {
+                    "correlation_id": correlation_id,
                     "source_ip": source_ip,
                     "http_headers": redact_sensitive_payload(headers),
                     "raw_body": redact_sensitive_payload(payload_dict) if isinstance(payload_dict, dict) else {"payload": "***REDACTED***"},
@@ -224,6 +263,50 @@ class WebhookIngestionService:
                     message="Request body does not match webhook schema",
                 ),
             )
+
+    def _resolve_correlation_id(self, headers: dict[str, Any]) -> str:
+        for key, value in headers.items():
+            if str(key).lower() != "x-correlation-id":
+                continue
+            correlation_id = str(value).strip()
+            if correlation_id and len(correlation_id) <= 64:
+                return correlation_id
+            break
+        return str(uuid.uuid4())
+
+    def _log_pipeline_summary(
+        self,
+        correlation_id: str,
+        signal_id: str,
+        filter_result: Any,
+        started_at: datetime,
+        notification_enqueued: bool,
+    ) -> None:
+        duration_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+        failed_rules = [
+            result.rule_code
+            for result in filter_result.filter_results
+            if result.result.value == "FAIL"
+        ]
+        warn_rules = [
+            result.rule_code
+            for result in filter_result.filter_results
+            if result.result.value == "WARN"
+        ]
+        logger.info(
+            "webhook_pipeline_completed",
+            extra={
+                "event": "webhook_pipeline_completed",
+                "correlation_id": correlation_id,
+                "signal_id": signal_id,
+                "decision": filter_result.final_decision.value,
+                "route": filter_result.route.value,
+                "failed_rules": failed_rules,
+                "warn_rules": warn_rules,
+                "duration_ms": duration_ms,
+                "notification_enqueued": notification_enqueued,
+            },
+        )
 
     def _build_notification_job(
         self,

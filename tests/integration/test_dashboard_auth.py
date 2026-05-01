@@ -9,6 +9,7 @@ ANALYTICS_URLS = [
     "/api/v1/analytics/signals/timeline",
     "/api/v1/analytics/filters/stats",
     "/api/v1/analytics/daily",
+    "/api/v1/analytics/ops-command-center",
 ]
 
 @pytest.fixture(autouse=True)
