@@ -9,6 +9,8 @@ from sqlalchemy import select, func, case, cast, Date, text
 from app.core.database import get_db
 from app.domain.models import Signal, SignalDecision, SignalFilterResult, SignalOutcome, TelegramMessage, WebhookEvent
 from app.api.dependencies import require_dashboard_auth
+from app.core.config import settings
+from app.repositories.config_repo import ConfigRepository
 from app.services.reject_codes import rule_code_to_reject_code
 
 _ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
@@ -172,6 +174,186 @@ def get_outcome_rules(
             "avg_r_multiple": round(float(row.avg_r_multiple or 0), 4),
         })
     return {"period_days": days, "rules": rules}
+
+
+@router.get("/ops-command-center")
+def get_ops_command_center(
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    last_webhook_at = db.execute(select(func.max(WebhookEvent.received_at))).scalar_one_or_none()
+    last_webhook_iso = last_webhook_at.isoformat() if last_webhook_at else None
+    webhook_age_minutes = None
+    if last_webhook_at:
+        webhook_age_minutes = int((datetime.now(timezone.utc) - last_webhook_at).total_seconds() // 60)
+
+    total_signals = db.execute(select(func.count(Signal.id)).where(Signal.created_at >= since)).scalar() or 0
+    decision_rows = db.execute(
+        select(SignalDecision.decision, func.count(SignalDecision.id).label("cnt"))
+        .join(Signal, Signal.id == SignalDecision.signal_row_id)
+        .where(Signal.created_at >= since)
+        .group_by(SignalDecision.decision)
+    ).all()
+    decisions = {row.decision: int(row.cnt or 0) for row in decision_rows}
+
+    tg_row = db.execute(
+        select(
+            func.sum(case((TelegramMessage.delivery_status == "SENT", 1), else_=0)).label("sent_count"),
+            func.sum(case((TelegramMessage.delivery_status == "FAILED", 1), else_=0)).label("failed_count"),
+        )
+        .join(Signal, Signal.id == TelegramMessage.signal_row_id)
+        .where(Signal.created_at >= since)
+    ).one()
+    sent_count = int(tg_row.sent_count or 0)
+    failed_count = int(tg_row.failed_count or 0)
+    tg_total = sent_count + failed_count
+
+    outcome_row = db.execute(
+        select(
+            func.sum(case((SignalOutcome.outcome_status == "OPEN", 1), else_=0)).label("open_count"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", 1), else_=0)).label("closed_count"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", case((SignalOutcome.is_win.is_(True), 1), else_=0)), else_=0)).label("wins"),
+            func.avg(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=None)).label("avg_r"),
+            func.sum(case((SignalOutcome.outcome_status == "CLOSED", SignalOutcome.r_multiple), else_=0)).label("total_r"),
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since)
+    ).one()
+    open_outcomes = int(outcome_row.open_count or 0)
+    closed_outcomes = int(outcome_row.closed_count or 0)
+    wins = int(outcome_row.wins or 0)
+
+    recent_signal_rows = db.execute(
+        select(
+            Signal.signal_id,
+            Signal.symbol,
+            Signal.timeframe,
+            Signal.side,
+            Signal.signal_type,
+            Signal.strategy,
+            Signal.entry_price,
+            Signal.risk_reward,
+            Signal.indicator_confidence,
+            Signal.created_at,
+            SignalDecision.decision,
+            SignalDecision.decision_reason,
+            SignalDecision.telegram_route,
+        )
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since)
+        .order_by(Signal.created_at.desc())
+        .limit(10)
+    ).all()
+    recent_signals = [
+        {
+            "signal_id": row.signal_id,
+            "symbol": row.symbol,
+            "timeframe": row.timeframe,
+            "side": row.side,
+            "signal_type": row.signal_type,
+            "strategy": row.strategy,
+            "entry_price": float(row.entry_price) if row.entry_price is not None else None,
+            "risk_reward": float(row.risk_reward) if row.risk_reward is not None else None,
+            "confidence": float(row.indicator_confidence) if row.indicator_confidence is not None else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "decision": row.decision,
+            "decision_reason": row.decision_reason,
+            "telegram_route": row.telegram_route,
+        }
+        for row in recent_signal_rows
+    ]
+
+    recent_outcome_rows = db.execute(
+        select(
+            Signal.signal_id,
+            SignalDecision.decision,
+            SignalDecision.telegram_route,
+            Signal.side,
+            Signal.timeframe,
+            Signal.signal_type,
+            SignalOutcome.close_reason,
+            SignalOutcome.r_multiple,
+            SignalOutcome.pnl_pct,
+            SignalOutcome.closed_at,
+            SignalOutcome.outcome_status,
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .outerjoin(SignalDecision, SignalDecision.signal_row_id == Signal.id)
+        .where(Signal.created_at >= since)
+        .order_by(SignalOutcome.created_at.desc())
+        .limit(10)
+    ).all()
+    recent_outcomes = [
+        {
+            "signal_id": row.signal_id,
+            "decision": row.decision,
+            "route": row.telegram_route,
+            "side": row.side,
+            "timeframe": row.timeframe,
+            "signal_type": row.signal_type,
+            "close_reason": row.close_reason,
+            "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
+            "pnl_pct": float(row.pnl_pct) if row.pnl_pct is not None else None,
+            "closed_at": row.closed_at.isoformat() if row.closed_at else None,
+            "outcome_status": row.outcome_status,
+        }
+        for row in recent_outcome_rows
+    ]
+
+    alerts = []
+    if webhook_age_minutes is not None and webhook_age_minutes > 30:
+        alerts.append(
+            {
+                "code": "STALE_WEBHOOK",
+                "severity": "MEDIUM",
+                "value": webhook_age_minutes,
+                "threshold": 30,
+                "message": f"Last webhook was {webhook_age_minutes} minutes ago",
+                "action": "Check TradingView alert status",
+            }
+        )
+
+    config_version = 1 if ConfigRepository(db).get_signal_bot_config() else 0
+
+    return {
+        "period_days": days,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "health": {
+            "api": "OK",
+            "database": "OK",
+            "config": "OK",
+            "telegram": "OK" if settings.telegram_bot_token else "FAIL",
+            "webhook_freshness": "WARN" if alerts else "OK",
+            "last_webhook_at": last_webhook_iso,
+            "config_version": config_version,
+        },
+        "ops_snapshot": {
+            "total_signals": int(total_signals),
+            "pass_main": decisions.get("PASS_MAIN", 0),
+            "pass_warning": decisions.get("PASS_WARNING", 0),
+            "reject": decisions.get("REJECT", 0),
+            "telegram_sent_rate": round((sent_count / tg_total), 4) if tg_total else 0.0,
+            "telegram_failed": failed_count,
+            "open_outcomes": open_outcomes,
+            "closed_outcomes": closed_outcomes,
+            "win_rate": round((wins / closed_outcomes), 4) if closed_outcomes else 0.0,
+            "avg_r": round(float(outcome_row.avg_r or 0), 4),
+            "total_r": round(float(outcome_row.total_r or 0), 4),
+        },
+        "alerts": alerts,
+        "performance": {
+            "main_vs_warn": [],
+            "by_timeframe": [],
+            "by_signal_type": [],
+            "rule_performance": [],
+        },
+        "recent_signals": recent_signals,
+        "recent_outcomes": recent_outcomes,
+        "calibration_insights": [],
+    }
 
 
 @router.get("/summary")
