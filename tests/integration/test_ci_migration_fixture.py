@@ -32,6 +32,10 @@ def test_db_fixture_tracks_versioned_migrations(db_session):
         ("003", "003_v11_upgrade.sql"),
         ("004", "004_query_indexes.sql"),
         ("005", "005_v11_config_idempotency_repair.sql"),
+        ("006", "006_v12_observability.sql"),
+        ("007", "007_v12_signal_outcomes.sql"),
+        ("008", "008_v12_config_audit.sql"),
+        ("009", "009_v12_market_context.sql"),
     ]
 
 

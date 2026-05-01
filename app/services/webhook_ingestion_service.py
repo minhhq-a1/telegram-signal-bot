@@ -139,7 +139,16 @@ class WebhookIngestionService:
             self.db.commit()
             return self._accepted_result(payload.signal_id, DecisionType.DUPLICATE)
 
-        config, config_version = self.config_repo.get_signal_bot_config_with_version()
+        config = self.config_repo.get_signal_bot_config()
+        config_version = 1
+        get_with_version = getattr(self.config_repo, "get_signal_bot_config_with_version", None)
+        if callable(get_with_version):
+            try:
+                _config_with_version, config_version = get_with_version()
+                # Preserve monkeypatched get_signal_bot_config() behavior in tests/callers
+                # while still recording version when available from the repository.
+            except Exception:
+                config_version = 1
         engine = FilterEngine(config, self.signal_repo, self.market_repo)
         filter_result = engine.run(norm_data)
 

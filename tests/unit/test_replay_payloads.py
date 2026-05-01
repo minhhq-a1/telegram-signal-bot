@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -34,7 +35,7 @@ def test_replay_payloads_script_writes_jsonl(tmp_path: Path):
 
     completed = subprocess.run(
         [
-            ".venv/bin/python",
+            sys.executable,
             "scripts/replay_payloads.py",
             "--input",
             str(input_dir),
