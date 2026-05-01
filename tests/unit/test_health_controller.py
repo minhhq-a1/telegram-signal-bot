@@ -8,4 +8,4 @@ def test_live_payload_reports_v12_release_version():
 
     assert payload["status"] == "ok"
     assert payload["service"] == "telegram-signal-bot"
-    assert payload["version"] == "1.2.0"
+    assert payload["version"] == "1.2.1"
