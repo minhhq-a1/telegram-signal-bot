@@ -20,6 +20,75 @@
 
 The roadmap spans multiple subsystems, so this plan is sliced into PR-sized tasks. Each task should be implemented, tested, and committed independently. Do not batch several tasks into one commit.
 
+## Agent Execution Strategy
+
+### Canonical Roles
+
+- **Primary implementation worker:** Claude Sonnet 4.6
+- **Primary PR reviewer:** Codex 5.4
+- **Escalation reviewer for high-risk clusters:** GPT-5.5 or Claude Opus 4.7 when available
+
+### Branch And PR Workflow
+
+1. Run **Task 0** on `release/1.3` as preflight only. Do not open a PR for Task 0 by itself.
+2. For each feature cluster below, Claude Sonnet creates a fresh branch from the latest `release/1.3`:
+
+```bash
+git switch release/1.3
+git pull --ff-only origin release/1.3
+git switch -c feature/<cluster-name>
+```
+
+3. Claude Sonnet implements only the tasks assigned to that cluster, runs the task-scoped verification commands from this plan, commits the work on that branch, pushes the branch, and opens a PR into `release/1.3`.
+4. Codex reviews the **PR diff**, not an uncommitted working tree. Review must be grounded in:
+   - this implementation plan;
+   - project invariants from `AGENTS.md`;
+   - task-specific tests and blast radius.
+5. Merge into `release/1.3` only after:
+   - Sonnet completed the scoped verification for that cluster;
+   - Codex review has no unresolved blocking findings;
+   - any required escalation review for that cluster is complete.
+6. Start the next cluster branch only after the previous PR is merged into `release/1.3`.
+
+### PR Cluster Map
+
+| Cluster | Branch | Tasks | Worker | Reviewer | Escalation |
+|---------|--------|-------|--------|----------|------------|
+| Preflight | `release/1.3` | Task 0 | Claude Sonnet 4.6 | Codex 5.4 only if baseline drift appears | No |
+| Cluster 1 Foundation | `feature/v13-filter-config-foundation` | Tasks 1-2 | Claude Sonnet 4.6 | Codex 5.4 | Optional |
+| Cluster 2 Service Boundaries | `feature/v13-calibration-replay-foundation` | Tasks 3-4 | Claude Sonnet 4.6 | Codex 5.4 | Optional |
+| Cluster 3 Market Context | `feature/v13-market-context-advisory` | Tasks 5-6 | Claude Sonnet 4.6 | Codex 5.4 | Required |
+| Cluster 4 Decision Controls | `feature/v13-calibration-config-admin` | Tasks 7-8 | Claude Sonnet 4.6 | Codex 5.4 | Required |
+| Cluster 5 Operator Tooling | `feature/v13-replay-dashboard` | Tasks 9-10 | Claude Sonnet 4.6 | Codex 5.4 | Optional |
+| Cluster 6 Release Gate | `feature/v13-release-handoff` | Task 11 + Final Verification | Claude Sonnet 4.6 | Codex 5.4 | Required |
+
+### Agent-Specific Instructions
+
+**If you are Claude Sonnet 4.6 acting as worker:**
+
+- Execute only the tasks assigned to the current cluster branch.
+- Follow the task steps in order; do not silently widen scope.
+- Run the verification commands listed in each task before pushing.
+- Open the PR into `release/1.3` with a summary of changed files, executed tests, and known risks.
+
+**If you are Codex 5.4 acting as reviewer:**
+
+- Review the PR diff against this plan, not against imagined scope.
+- Lead with findings: correctness, regression risk, invariant violations, missing tests, dead code, unsafe query/index semantics.
+- Block the PR if any of these are violated:
+  - persist-before-notify;
+  - idempotency semantics;
+  - boolean-gate routing contract;
+  - config hardcoding instead of DB-backed config;
+  - import/dependency chain fragility introduced by refactor;
+  - insufficient tests for changed blast radius.
+
+**If the cluster is marked escalation-required:**
+
+- Codex review is still mandatory.
+- After Codex review, request one more high-capability pass from GPT-5.5 or Claude Opus 4.7 before merge if that reviewer is available.
+- Escalation review should focus on architecture, query semantics, rollback correctness, and release risk rather than style.
+
 ## File Map
 
 Create:
@@ -68,6 +137,12 @@ Modify:
 ---
 
 ## Task 0: Baseline Verification
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR: run on `release/1.3`; no standalone PR
+- Reviewer: Codex 5.4 only if baseline drift or failing preflight appears
+- Escalation: No
 
 **Files:**
 - Read: `docs/ROADMAP_V1.3.md`
@@ -125,6 +200,12 @@ Expected when PostgreSQL is available: integration suite passes. If the env var 
 ---
 
 ## Task 1: FilterEngine Boundary Refactor
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-filter-config-foundation` (Cluster 1)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional, but recommended if the refactor changes public orchestration behavior unexpectedly
 
 **Files:**
 - Create: `app/services/filter_rules/__init__.py`
@@ -502,6 +583,12 @@ git commit -m "refactor: split filter engine rule modules"
 
 ## Task 2: Signal Bot Config Validation Service
 
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-filter-config-foundation` (Cluster 1)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional
+
 **Files:**
 - Create: `app/services/config_validation.py`
 - Modify: `app/repositories/config_repo.py`
@@ -732,6 +819,12 @@ git commit -m "feat: validate signal bot config"
 
 ## Task 3: Calibration Service Boundary
 
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-calibration-replay-foundation` (Cluster 2)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional
+
 **Files:**
 - Modify: `app/services/calibration_report.py`
 - Modify: `app/api/analytics_controller.py`
@@ -845,6 +938,12 @@ git commit -m "refactor: move calibration report assembly to service"
 ---
 
 ## Task 4: Replay Service Boundary
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-calibration-replay-foundation` (Cluster 2)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional
 
 **Files:**
 - Create: `app/services/replay_service.py`
@@ -1022,6 +1121,12 @@ git commit -m "refactor: extract replay service"
 
 ## Task 5: Market Context Repository Tolerance And Index
 
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-market-context-advisory` (Cluster 3)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Required because this task changes query semantics, indexing, and DB-backed lookup behavior
+
 **Files:**
 - Create: `migrations/010_v13_market_context_index.sql`
 - Modify: `app/repositories/market_context_repo.py`
@@ -1172,6 +1277,12 @@ git commit -m "feat: add tolerant market context lookup"
 
 ## Task 6: Market Context Advisory Filter Integration
 
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-market-context-advisory` (Cluster 3)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Required because this task changes advisory routing behavior around market context
+
 **Files:**
 - Create: `app/services/filter_rules/market_context.py`
 - Modify: `app/services/filter_engine.py`
@@ -1253,6 +1364,12 @@ git commit -m "feat: add market context advisory filter"
 ---
 
 ## Task 7: Calibration Proposal Service And API
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-calibration-config-admin` (Cluster 4)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional; promote to required if API contract drifts from roadmap or config semantics
 
 **Files:**
 - Create: `app/services/calibration_proposals.py`
@@ -1413,6 +1530,12 @@ git commit -m "feat: add calibration proposal API"
 ---
 
 ## Task 8: Config Dry-Run And Rollback
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-calibration-config-admin` (Cluster 4)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Required because this task changes rollback semantics and audited config lifecycle
 
 **Files:**
 - Modify: `app/api/config_controller.py`
@@ -1577,6 +1700,12 @@ git commit -m "feat: add config dry-run and rollback"
 
 ## Task 9: Replay Config Compare Mode
 
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-replay-dashboard` (Cluster 5)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional
+
 **Files:**
 - Modify: `app/services/replay_service.py`
 - Modify: `scripts/replay_payloads.py`
@@ -1658,6 +1787,12 @@ git commit -m "feat: add replay config compare mode"
 ---
 
 ## Task 10: Dashboard Decision Intelligence Panel
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-replay-dashboard` (Cluster 5)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Optional
 
 **Files:**
 - Modify: `app/templates/dashboard.html`
@@ -1744,6 +1879,12 @@ git commit -m "feat: show decision intelligence dashboard"
 ---
 
 ## Task 11: Docs, Version, And Release Handoff
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6
+- Branch / PR Cluster: `feature/v13-release-handoff` (Cluster 6)
+- Reviewer: Codex 5.4 on PR into `release/1.3`
+- Escalation: Required because this cluster closes release scope and prepares handoff
 
 **Files:**
 - Modify: `docs/API_REFERENCE.md`
@@ -1867,6 +2008,11 @@ git commit -m "docs: finalize v1.3 release handoff"
 ---
 
 ## Final Verification Before Merge
+
+**Agent Assignment:**
+- Worker: Claude Sonnet 4.6 prepares the final release-gate PR state
+- Reviewer: Codex 5.4 performs mandatory final diff review on the release-handoff PR
+- Escalation: Required; run one additional final pass with GPT-5.5 or Claude Opus 4.7 if available before declaring V1.3 ready
 
 Run:
 
