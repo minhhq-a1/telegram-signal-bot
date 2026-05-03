@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.filter_engine import FilterResult
+from app.services.filter_rules.types import FilterResult
 from app.core.enums import RuleResult, RuleSeverity
 
 
