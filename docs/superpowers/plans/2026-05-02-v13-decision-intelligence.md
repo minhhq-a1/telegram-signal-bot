@@ -35,7 +35,7 @@ Create:
 - `app/services/config_validation.py` - Pydantic v2 validation for `signal_bot_config`.
 - `app/services/calibration_proposals.py` - proposal builder and guardrails.
 - `app/services/replay_service.py` - reusable replay and compare engine.
-- `migrations/010_v13_market_context_index.sql` - market context nearest-snapshot index.
+- `migrations/010_v13_market_context_index.sql` - market context at-or-before-close lookup index.
 - `tests/unit/test_config_validation.py`
 - `tests/unit/test_filter_rule_modules.py`
 - `tests/unit/test_calibration_proposals.py`
@@ -47,12 +47,11 @@ Create:
 Modify:
 
 - `app/services/filter_engine.py` - orchestrator only; keep public API.
-- `app/repositories/config_repo.py` - validate merged config before returning/applying.
-- `app/repositories/market_context_repo.py` - nearest snapshot lookup.
+- `app/repositories/config_repo.py` - strict validation on write paths, warning-only validation on read paths, rollback lookup.
+- `app/repositories/market_context_repo.py` - latest snapshot-at-or-before-close lookup.
 - `app/services/market_context_service.py` - tolerate missing/stale context and source.
 - `app/api/analytics_controller.py` - delegate calibration/proposal logic.
 - `app/api/config_controller.py` - dry-run and rollback endpoints.
-- `app/domain/models.py` - add config history model only if rollback cannot be supported from audit logs.
 - `app/domain/schemas.py` - response/request models for proposals, dry-run, replay where needed.
 - `scripts/replay_payloads.py` - thin CLI wrapper around `ReplayService`.
 - `app/templates/dashboard.html` - Decision Intelligence panel.
@@ -136,8 +135,10 @@ Expected when PostgreSQL is available: integration suite passes. If the env var 
 - Create: `app/services/filter_rules/advisory.py`
 - Create: `app/services/filter_rules/routing.py`
 - Modify: `app/services/filter_engine.py`
+- Modify: `app/services/market_context_service.py`
 - Test: `tests/unit/test_filter_engine.py`
 - Test: `tests/unit/test_filter_rule_modules.py`
+- Test: `tests/unit/test_market_context_service.py`
 
 - [ ] **Step 1: Add focused tests for extracted routing and validation helpers**
 
@@ -469,6 +470,14 @@ class FilterEngine:
         )
 ```
 
+Also update `app/services/market_context_service.py` to import `FilterResult` directly from the extracted type module:
+
+```python
+from app.services.filter_rules.types import FilterResult
+```
+
+Remove the old import through `app.services.filter_engine`. This avoids a fragile import chain once `filter_rules/market_context.py` is introduced.
+
 - [ ] **Step 8: Run characterization tests**
 
 Run:
@@ -476,6 +485,8 @@ Run:
 ```bash
 python -m pytest tests/unit/test_filter_rule_modules.py tests/unit/test_filter_engine.py -q
 python -m pytest tests/unit/test_strategy_validator.py tests/unit/test_rescoring_engine.py -q
+python -m pytest tests/unit/test_market_context_service.py -q
+python -m pytest tests/unit -q
 ```
 
 Expected: all selected tests pass.
@@ -483,7 +494,7 @@ Expected: all selected tests pass.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add app/services/filter_engine.py app/services/filter_rules tests/unit/test_filter_rule_modules.py
+git add app/services/filter_engine.py app/services/filter_rules app/services/market_context_service.py tests/unit/test_filter_rule_modules.py
 git commit -m "refactor: split filter engine rule modules"
 ```
 
@@ -658,15 +669,32 @@ Modify `ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG` in `app/repositories/config
 },
 ```
 
-- [ ] **Step 5: Validate merged config before returning and applying**
+- [ ] **Step 5: Validate writes strictly and reads as warning-only**
 
 In `app/repositories/config_repo.py`, import:
 
 ```python
-from app.services.config_validation import validate_signal_bot_config
+from app.services.config_validation import ConfigValidationError, validate_signal_bot_config
 ```
 
-Use `validate_signal_bot_config(merged_config)` before caching in `get_signal_bot_config()`, before returning from `get_signal_bot_config_with_version()`, and before saving `new_value` in `update_config_with_audit()`.
+For read paths, do not raise on invalid legacy config. Use this pattern in both `get_signal_bot_config()` and `get_signal_bot_config_with_version()`:
+
+```python
+try:
+    validate_signal_bot_config(merged_config)
+except ConfigValidationError as exc:
+    logger.warning("signal_bot_config_validation_warning", extra={"error": str(exc)})
+```
+
+Return the merged config even if validation warns. This preserves webhook continuity when DB config contains manual legacy keys.
+
+For write paths, validation is strict. In `update_config_with_audit()` validate before assignment:
+
+```python
+validated_value = validate_signal_bot_config(new_value)
+```
+
+Save `validated_value` to `config.config_value` and to the audit row.
 
 - [ ] **Step 6: Run config tests**
 
@@ -678,7 +706,22 @@ python -m pytest tests/unit/test_config_validation.py tests/unit/test_config_rep
 
 Expected: all selected tests pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Verify legacy read compatibility**
+
+Before closing the task, verify read-path behavior with an invalid legacy config fixture or manual DB patch:
+
+```python
+config = ConfigRepository(db_session).get_signal_bot_config()
+assert isinstance(config, dict)
+```
+
+Expected:
+
+- invalid legacy keys do not crash reads;
+- a warning log is emitted;
+- write paths still reject the same payload.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add app/repositories/config_repo.py app/services/config_validation.py tests/unit/test_config_validation.py tests/unit/test_config_repo.py
@@ -780,6 +823,7 @@ def get_calibration_report(
 ```
 
 Remove now-unused calibration endpoint SQL assembly imports if they become stale.
+Remove the old inline SQL/query assembly block from `get_calibration_report()` so the controller body contains only the service call above.
 
 - [ ] **Step 4: Run calibration tests**
 
@@ -955,6 +999,7 @@ def load_json_payloads(input_path: Path) -> list[tuple[Path, dict[str, Any]]]:
 - [ ] **Step 4: Update CLI wrapper**
 
 Modify `scripts/replay_payloads.py` to use `ReplayService` for record creation while keeping existing CLI arguments and JSONL output. Preserve output fields `config_db_key`, `dry_run`, and `persisted` by adding them after service returns each record.
+Remove the old `_NoopSignalRepo` and `_NoopMarketRepo` classes from the CLI after the service extraction so those test doubles live in one place only.
 
 - [ ] **Step 5: Run replay tests**
 
@@ -990,7 +1035,7 @@ git commit -m "refactor: extract replay service"
 Create `migrations/010_v13_market_context_index.sql`:
 
 ```sql
--- Migration 010: Market context lookup index for V1.3 nearest-snapshot checks.
+-- Migration 010: Market context lookup index for V1.3 at-or-before-close checks.
 
 CREATE INDEX IF NOT EXISTS idx_market_context_symbol_tf_source_bar_time
 ON market_context_snapshots(symbol, timeframe, source, bar_time DESC);
@@ -1011,7 +1056,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.models import MarketContextSnapshot
@@ -1030,14 +1075,13 @@ class MarketContextRepository:
         max_age_minutes: int = 10,
     ) -> MarketContextSnapshot | None:
         lower = bar_time - timedelta(minutes=max_age_minutes)
-        upper = bar_time + timedelta(minutes=max_age_minutes)
         stmt = (
             select(MarketContextSnapshot)
             .where(MarketContextSnapshot.symbol == symbol)
             .where(MarketContextSnapshot.timeframe == timeframe)
             .where(MarketContextSnapshot.bar_time >= lower)
-            .where(MarketContextSnapshot.bar_time <= upper)
-            .order_by(func.abs(func.extract("epoch", MarketContextSnapshot.bar_time - bar_time)))
+            .where(MarketContextSnapshot.bar_time <= bar_time)
+            .order_by(MarketContextSnapshot.bar_time.desc())
             .limit(1)
         )
         if source is not None:
@@ -1045,9 +1089,13 @@ class MarketContextRepository:
         return self.db.execute(stmt).scalar_one_or_none()
 ```
 
+This task uses the agreed semantic: "most recent snapshot at or before candle close within tolerance", not "absolute nearest snapshot".
+
+If production lookup semantics always include `source`, keep the proposed index as-is. If lookups frequently omit `source`, note in the implementation summary whether a second index on `(symbol, timeframe, bar_time DESC)` is needed after `EXPLAIN ANALYZE`.
+
 - [ ] **Step 3: Update service call signature**
 
-Modify `app/services/market_context_service.py` so `compare_regime()` reads `snapshot_max_age_minutes` and optional `source`:
+Modify `app/services/market_context_service.py` so `compare_regime()` reads `snapshot_max_age_minutes` and passes `source` to the repository when available:
 
 ```python
 def compare_regime(self, signal: dict, enabled: bool, snapshot_max_age_minutes: int = 10) -> FilterResult | None:
@@ -1060,16 +1108,29 @@ def compare_regime(self, signal: dict, enabled: bool, snapshot_max_age_minutes: 
         signal["symbol"],
         signal["timeframe"],
         bar_time,
+        source=signal.get("source"),
         max_age_minutes=snapshot_max_age_minutes,
     )
-    ...
+    if snapshot is None or snapshot.backend_regime is None:
+        return None
+    payload_regime = signal.get("regime")
+    if payload_regime == snapshot.backend_regime:
+        return FilterResult("BACKEND_REGIME_MISMATCH", "market_context", RuleResult.PASS, RuleSeverity.INFO)
+    return FilterResult(
+        "BACKEND_REGIME_MISMATCH",
+        "market_context",
+        RuleResult.WARN,
+        RuleSeverity.MEDIUM,
+        0.0,
+        {"payload_regime": payload_regime, "backend_regime": snapshot.backend_regime},
+    )
 ```
 
 Keep existing PASS/WARN behavior unchanged.
 
-- [ ] **Step 4: Add integration tests for nearest lookup**
+- [ ] **Step 4: Add integration tests for at-or-before-close lookup**
 
-Create `tests/integration/test_market_context_integration.py` with tests that insert snapshots around `bar_time`, call `MarketContextRepository.find_snapshot()`, and assert nearest non-stale snapshot is returned. Use the existing integration DB fixture patterns from `tests/integration/conftest.py`.
+Create `tests/integration/test_market_context_integration.py` with tests that insert snapshots around `bar_time`, call `MarketContextRepository.find_snapshot()`, and assert the latest snapshot at or before `bar_time` inside the tolerance window is returned. Also assert that snapshots newer than `bar_time` are ignored even if they fall inside the old symmetric window. Use the existing integration DB fixture patterns from `tests/integration/conftest.py`.
 
 - [ ] **Step 5: Run tests**
 
@@ -1081,7 +1142,26 @@ python -m pytest tests/unit/test_market_context_service.py tests/integration/tes
 
 Expected: all selected tests pass when integration DB is available; DB tests skip if env is absent.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Verify the index is used**
+
+With PostgreSQL integration DB available, run:
+
+```sql
+EXPLAIN ANALYZE
+SELECT *
+FROM market_context_snapshots
+WHERE symbol = 'BTCUSDT'
+  AND timeframe = '5m'
+  AND source = 'test'
+  AND bar_time >= NOW() - INTERVAL '10 minutes'
+  AND bar_time <= NOW()
+ORDER BY bar_time DESC
+LIMIT 1;
+```
+
+Expected: PostgreSQL uses the `idx_market_context_symbol_tf_source_bar_time` index path rather than a full sequential scan.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add app/repositories/market_context_repo.py app/services/market_context_service.py migrations/010_v13_market_context_index.sql tests/unit/test_market_context_service.py tests/integration/test_market_context_integration.py tests/integration/test_ci_migration_fixture.py
@@ -1289,6 +1369,8 @@ def build_calibration_proposals(
     }
 ```
 
+Document the contract explicitly: `build_calibration_proposals()` reads the current threshold value from live config, not from any `current` field inside `threshold_suggestions`.
+
 - [ ] **Step 3: Add API endpoint**
 
 In `app/api/analytics_controller.py`, add:
@@ -1392,10 +1474,10 @@ def dry_run_signal_bot_config(
     config_patch = payload.get("config_value")
     if not isinstance(config_patch, dict):
         raise HTTPException(status_code=400, detail={"error_code": "CONFIG_VALIDATION_FAILED", "message": "config_value must be an object"})
+    from app.repositories.config_repo import _deep_merge, diff_config_paths
     repo = ConfigRepository(db)
     current_config, version = repo.get_signal_bot_config_with_version()
     merged = _deep_merge(current_config, config_patch)
-    from app.repositories.config_repo import diff_config_paths
     from app.services.config_validation import ConfigValidationError, validate_signal_bot_config
     try:
         validated = validate_signal_bot_config(merged)
@@ -1410,9 +1492,44 @@ def dry_run_signal_bot_config(
     }
 ```
 
-- [ ] **Step 4: Add rollback support**
+- [ ] **Step 4: Add rollback support with audit-log scan**
 
-Preferred minimal approach: use `SystemConfigAuditLog.old_value/new_value` to find a target version only if version is stored in audit. If current audit table lacks version, add a new migration with `old_version` and `new_version`. Then implement `ConfigRepository.get_config_value_by_version(config_key, version)` and rollback endpoint that writes a new audited config version.
+Use the minimum-change V1.3 approach: reconstruct historical config values by scanning audit logs backward from the current version. Do not add a new migration for version columns in this slice.
+
+Implement this repository method:
+
+```python
+def get_config_value_by_version(self, config_key: str, target_version: int) -> dict | None:
+    current = self.db.execute(
+        select(SystemConfig).where(SystemConfig.config_key == config_key)
+    ).scalar_one_or_none()
+    if not current:
+        return None
+    if int(current.version or 1) == target_version:
+        return copy.deepcopy(current.config_value)
+
+    logs = self.db.execute(
+        select(SystemConfigAuditLog)
+        .where(SystemConfigAuditLog.config_key == config_key)
+        .order_by(SystemConfigAuditLog.created_at.desc())
+    ).scalars().all()
+
+    version = int(current.version or 1)
+    for log in logs:
+        if version == target_version:
+            return copy.deepcopy(log.new_value)
+        version -= 1
+        if version == target_version:
+            return copy.deepcopy(log.old_value)
+    return None
+```
+
+Then implement the rollback endpoint by:
+
+1. validating `target_version`;
+2. loading the historic config with `get_config_value_by_version()`;
+3. calling `update_config_with_audit()` with that historic value;
+4. returning the new live version and the rollback source version.
 
 Endpoint:
 
@@ -1438,10 +1555,21 @@ python -m pytest tests/integration/test_config_api.py tests/integration/test_con
 
 Expected: all selected tests pass when integration DB is available.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Verify rollback creates a new live version**
+
+Verify this sequence in integration tests or a local DB session:
+
+1. read current config version;
+2. apply a config patch and confirm version increments by 1;
+3. roll back to the prior version and confirm the live version increments again;
+4. confirm the rolled-back config value matches the historic target version.
+
+Expected: rollback creates a fresh live version; it does not overwrite prior state.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add app/api/config_controller.py app/repositories/config_repo.py app/domain/schemas.py tests/integration/test_config_api.py tests/integration/test_config_dry_run_rollback.py migrations
+git add app/api/config_controller.py app/repositories/config_repo.py app/domain/schemas.py tests/integration/test_config_api.py tests/integration/test_config_dry_run_rollback.py
 git commit -m "feat: add config dry-run and rollback"
 ```
 
@@ -1486,7 +1614,11 @@ When `--compare-config-file` is present, call:
 record = service.compare_payload(payload_dict, proposed_config=proposed_config, file_label=str(file_path))
 ```
 
-Otherwise call `service.replay_payload(...)`.
+Otherwise call:
+
+```python
+record = service.replay_payload(payload_dict, file_label=str(file_path))
+```
 
 - [ ] **Step 4: Add summary output**
 
@@ -1770,4 +1902,3 @@ Expected:
 - Invariants: no task changes persist-before-notify, idempotency, audit-first, or boolean gate routing semantics.
 - Calibration remains advisory; config mutation requires admin endpoint and audit.
 - Market context starts WARN-only; hard reject remains out of scope.
-
