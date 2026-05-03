@@ -1,46 +1,60 @@
 """
 Unit tests for filter rule modules (V1.3 boundary refactor).
-Verifies each rule module exports expected functions and types.
+Tests actual behavior of extracted routing and validation helpers.
 """
+from __future__ import annotations
+
+from app.core.enums import DecisionType, RuleResult, RuleSeverity, TelegramRoute
+from app.services.filter_rules.routing import decide, build_decision_reason
 from app.services.filter_rules.types import FilterResult
-from app.services.filter_rules import routing, validation, trade_math, business, advisory
+from app.services.filter_rules.validation import check_symbol, check_timeframe
 
 
-def test_types_module_exports_filter_result():
-    """Verify FilterResult is importable from types module"""
-    assert FilterResult is not None
+def test_decide_rejects_on_any_fail() -> None:
+    results = [FilterResult("SYMBOL_ALLOWED", "validation", RuleResult.FAIL, RuleSeverity.CRITICAL)]
+
+    decision, route = decide(results)
+
+    assert decision == DecisionType.REJECT
+    assert route == TelegramRoute.NONE
 
 
-def test_routing_module_exports_check_functions():
-    """Verify routing module exports expected check functions"""
-    assert hasattr(routing, "check_symbol")
-    assert hasattr(routing, "check_timeframe")
+def test_decide_warns_on_medium_warn() -> None:
+    results = [FilterResult("LOW_VOLUME_WARNING", "trading", RuleResult.WARN, RuleSeverity.MEDIUM)]
+
+    decision, route = decide(results)
+
+    assert decision == DecisionType.PASS_WARNING
+    assert route == TelegramRoute.WARN
 
 
-def test_validation_module_exports_check_functions():
-    """Verify validation module exports expected check functions"""
-    assert hasattr(validation, "check_confidence_range")
-    assert hasattr(validation, "check_price_valid")
+def test_decide_passes_main_on_low_warn_only() -> None:
+    results = [FilterResult("VOLATILITY_WARNING", "trading", RuleResult.WARN, RuleSeverity.LOW)]
+
+    decision, route = decide(results)
+
+    assert decision == DecisionType.PASS_MAIN
+    assert route == TelegramRoute.MAIN
 
 
-def test_trade_math_module_exports_check_functions():
-    """Verify trade_math module exports expected check functions"""
-    assert hasattr(trade_math, "check_direction_sanity")
-    assert hasattr(trade_math, "check_min_rr")
+def test_build_decision_reason_lists_medium_warns_only_for_warning_route() -> None:
+    results = [
+        FilterResult("LOW_VOLUME_WARNING", "trading", RuleResult.WARN, RuleSeverity.MEDIUM),
+        FilterResult("VOLATILITY_WARNING", "trading", RuleResult.WARN, RuleSeverity.LOW),
+    ]
+
+    reason = build_decision_reason("Filters passed", results, DecisionType.PASS_WARNING)
+
+    assert reason == "Warnings triggered: LOW_VOLUME_WARNING"
 
 
-def test_business_module_exports_check_functions():
-    """Verify business module exports expected check functions"""
-    assert hasattr(business, "check_min_confidence_by_tf")
-    assert hasattr(business, "check_duplicate")
-    assert hasattr(business, "check_news_block")
-    assert hasattr(business, "check_regime_hard_block")
+def test_validation_helpers_append_expected_results() -> None:
+    results: list[FilterResult] = []
+    config = {"allowed_symbols": ["BTCUSDT"], "allowed_timeframes": ["5m"]}
+    signal = {"symbol": "ETHUSDT", "timeframe": "1h"}
 
+    check_symbol(signal, config, results)
+    check_timeframe(signal, config, results)
 
-def test_advisory_module_exports_check_functions():
-    """Verify advisory module exports expected check functions"""
-    assert hasattr(advisory, "check_volatility")
-    assert hasattr(advisory, "check_cooldown")
-    assert hasattr(advisory, "check_low_volume")
-    assert hasattr(advisory, "check_rr_profile_match")
-    assert hasattr(advisory, "check_backend_score")
+    assert [item.rule_code for item in results] == ["SYMBOL_ALLOWED", "TIMEFRAME_ALLOWED"]
+    assert [item.result for item in results] == [RuleResult.FAIL, RuleResult.FAIL]

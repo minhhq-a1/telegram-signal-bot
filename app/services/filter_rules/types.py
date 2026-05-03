@@ -3,7 +3,7 @@ Shared types for filter rule modules.
 """
 from __future__ import annotations
 import dataclasses
-from app.core.enums import RuleResult, RuleSeverity
+from app.core.enums import RuleResult, RuleSeverity, DecisionType, TelegramRoute
 
 
 @dataclasses.dataclass
@@ -24,3 +24,16 @@ class FilterResult:
             "score_delta": self.score_delta,
             "details": self.details
         }
+
+
+@dataclasses.dataclass
+class FilterExecutionResult:
+    filter_results: list[FilterResult]
+    server_score: float
+    final_decision: DecisionType
+    decision_reason: str
+    route: TelegramRoute
+
+
+def has_fail(results: list[FilterResult]) -> bool:
+    return any(result.result == RuleResult.FAIL for result in results)
