@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.repositories.config_repo import ConfigRepository
 from app.services.reject_codes import rule_code_to_reject_code
 from app.services.calibration_report import build_calibration_report, build_calibration_report_from_db
+from app.services.calibration_proposals import build_calibration_proposals
 
 _ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
 _ALLOWED_OUTCOME_GROUP_BY = frozenset([
@@ -565,6 +566,19 @@ def get_calibration_report(
     _auth: None = Depends(require_dashboard_auth),
 ):
     return build_calibration_report_from_db(db, days=days, min_samples=min_samples)
+
+
+@router.get("/calibration/proposals")
+def get_calibration_proposals(
+    days: int = Query(90, ge=1, le=365),
+    min_samples: int = Query(30, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_dashboard_auth),
+):
+    report = build_calibration_report_from_db(db, days=days, min_samples=min_samples)
+    current_config, version = ConfigRepository(db).get_signal_bot_config_with_version()
+    proposals = build_calibration_proposals(report, current_config, current_config_version=version, min_samples=min_samples)
+    return {"period_days": days, "min_samples": min_samples, **proposals}
 
 
 @router.get("/summary")
