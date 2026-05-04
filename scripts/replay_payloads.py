@@ -33,17 +33,25 @@ def main() -> int:
 
     config = ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG
     service = ReplayService(config)
-    payloads = load_json_payloads(input_path)
+    file_paths = load_json_payloads(input_path)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as out:
-        for file_path, payload_dict in payloads:
-            record = service.replay_payload(payload_dict, file_label=str(file_path))
+        for file_path in file_paths:
+            try:
+                payload_dict = json.loads(file_path.read_text(encoding="utf-8"))
+                record = service.replay_payload(payload_dict, file_label=str(file_path))
+            except Exception as exc:
+                record = {
+                    "file": str(file_path),
+                    "status": "error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
             record["config_db_key"] = args.config_db_key
             record["dry_run"] = dry_run
             record["persisted"] = False if not persist else False
             out.write(json.dumps(record) + "\n")
-    print(f"ok replayed {len(payloads)} payload(s) -> {output_path}")
+    print(f"ok replayed {len(file_paths)} payload(s) -> {output_path}")
     return 0
 
 

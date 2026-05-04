@@ -66,6 +66,8 @@ class ReplayService:
         }
 
 
-def load_json_payloads(input_path: Path) -> list[tuple[Path, dict[str, Any]]]:
-    paths = [input_path] if input_path.is_file() else sorted(path for path in input_path.rglob("*.json") if path.is_file())
-    return [(path, json.loads(path.read_text(encoding="utf-8"))) for path in paths]
+def load_json_payloads(input_path: Path) -> list[Path]:
+    """Load paths only - parsing happens per-file in caller for fault isolation."""
+    if input_path.is_file():
+        return [input_path]
+    return sorted(path for path in input_path.rglob("*.json") if path.is_file())
