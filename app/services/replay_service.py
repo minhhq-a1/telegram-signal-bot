@@ -76,3 +76,14 @@ def load_json_payloads(input_path: Path) -> list[Path]:
     if input_path.is_file():
         return [input_path]
     return sorted(path for path in input_path.rglob("*.json") if path.is_file())
+
+
+def summarize_compare_records(records: list[dict]) -> dict:
+    ok_records = [record for record in records if record.get("status") == "ok"]
+    return {
+        "total": len(records),
+        "changed_decisions": sum(1 for record in ok_records if record.get("decision_changed")),
+        "main_to_warn": sum(1 for record in ok_records if record.get("current_route") == "MAIN" and record.get("proposed_route") == "WARN"),
+        "pass_to_reject": sum(1 for record in ok_records if str(record.get("current_decision", "")).startswith("PASS") and record.get("proposed_decision") == "REJECT"),
+        "reject_to_pass": sum(1 for record in ok_records if record.get("current_decision") == "REJECT" and str(record.get("proposed_decision", "")).startswith("PASS")),
+    }
