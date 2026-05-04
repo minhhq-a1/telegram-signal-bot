@@ -21,7 +21,7 @@ def test_health_live_does_not_require_db(client):
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["service"] == "telegram-signal-bot"
-    assert response.json()["version"] == "1.2.1"
+    assert response.json()["version"] == "1.3.0"
 
 
 def test_health_ready_returns_ok_when_db_and_config_are_available(client):
