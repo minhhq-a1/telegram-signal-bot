@@ -71,3 +71,62 @@ def test_accepts_market_context_warn_mode():
     }
     result = validate_signal_bot_config(config)
     assert result["market_context"]["regime_mismatch_mode"] == "WARN"
+
+
+def test_rejects_invalid_regime_mismatch_mode():
+    """Invalid regime_mismatch_mode raises ConfigValidationError."""
+    config = {
+        "allowed_symbols": ["BTCUSDT"],
+        "allowed_timeframes": ["1m"],
+        "confidence_thresholds": {"1m": 0.8},
+        "cooldown_minutes": {"1m": 5},
+        "rr_min_base": 1.5,
+        "market_context": {"regime_mismatch_mode": "BLOCK"},
+    }
+    with pytest.raises(ConfigValidationError) as exc:
+        validate_signal_bot_config(config)
+    assert "regime_mismatch_mode" in str(exc.value)
+
+
+def test_rejects_snapshot_max_age_above_limit():
+    """snapshot_max_age_minutes above 1440 raises ConfigValidationError."""
+    config = {
+        "allowed_symbols": ["BTCUSDT"],
+        "allowed_timeframes": ["1m"],
+        "confidence_thresholds": {"1m": 0.8},
+        "cooldown_minutes": {"1m": 5},
+        "rr_min_base": 1.5,
+        "market_context": {"snapshot_max_age_minutes": 99999},
+    }
+    with pytest.raises(ConfigValidationError) as exc:
+        validate_signal_bot_config(config)
+    assert "snapshot_max_age_minutes" in str(exc.value)
+
+
+def test_rejects_empty_allowed_symbols():
+    """Empty string in allowed_symbols raises ConfigValidationError."""
+    config = {
+        "allowed_symbols": [""],
+        "allowed_timeframes": ["1m"],
+        "confidence_thresholds": {"1m": 0.8},
+        "cooldown_minutes": {"1m": 5},
+        "rr_min_base": 1.5,
+    }
+    with pytest.raises(ConfigValidationError) as exc:
+        validate_signal_bot_config(config)
+    assert "allowed_symbols" in str(exc.value)
+
+
+def test_rejects_tolerance_above_one():
+    """duplicate_price_tolerance_pct >= 1 raises ConfigValidationError."""
+    config = {
+        "allowed_symbols": ["BTCUSDT"],
+        "allowed_timeframes": ["1m"],
+        "confidence_thresholds": {"1m": 0.8},
+        "cooldown_minutes": {"1m": 5},
+        "rr_min_base": 1.5,
+        "duplicate_price_tolerance_pct": 1.2,
+    }
+    with pytest.raises(ConfigValidationError) as exc:
+        validate_signal_bot_config(config)
+    assert "duplicate_price_tolerance_pct" in str(exc.value)

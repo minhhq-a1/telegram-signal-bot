@@ -1,6 +1,8 @@
 """Validation service for signal_bot_config using Pydantic v2."""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
@@ -14,8 +16,8 @@ class MarketContextConfig(BaseModel):
     model_config = {"extra": "forbid"}
 
     enabled: bool = False
-    regime_mismatch_mode: str = "WARN"
-    snapshot_max_age_minutes: int = Field(default=10, gt=0)
+    regime_mismatch_mode: Literal["WARN"] = "WARN"
+    snapshot_max_age_minutes: int = Field(default=10, ge=1, le=1440)
 
 
 class SignalBotConfigModel(BaseModel):
@@ -65,6 +67,22 @@ class SignalBotConfigModel(BaseModel):
                     f"cooldown_minutes[{timeframe}] = {minutes} must be positive"
                 )
         return v
+
+    @field_validator("allowed_symbols", "allowed_timeframes")
+    @classmethod
+    def non_empty_string_list(cls, value: list[str]) -> list[str]:
+        """Ensure list contains at least one non-empty string."""
+        if not value or any(not item.strip() for item in value):
+            raise ValueError("must contain at least one non-empty string")
+        return value
+
+    @field_validator("duplicate_price_tolerance_pct", "rr_tolerance_pct")
+    @classmethod
+    def percentage_below_one(cls, value: float | None) -> float | None:
+        """Ensure percentage values are between 0 and 1 (exclusive)."""
+        if value is not None and not (0.0 < value < 1.0):
+            raise ValueError("must be between 0 and 1 (exclusive)")
+        return value
 
 
 def validate_signal_bot_config(config: dict) -> dict:
