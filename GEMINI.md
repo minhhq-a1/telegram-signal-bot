@@ -1,4 +1,4 @@
-# GEMINI.md — Signal Bot V1.1
+# GEMINI.md — Signal Bot V1.3
 # Antigravity-specific behavior. Overrides AGENTS.md khi conflict.
 # Giữ file này dưới 500 tokens.
 

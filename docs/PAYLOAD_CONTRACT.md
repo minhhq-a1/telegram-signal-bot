@@ -1,4 +1,4 @@
-# Payload Contract — TradingView → Signal Bot V1.1
+# Payload Contract — TradingView → Signal Bot V1.3
 
 ## 1. Tổng quan
 

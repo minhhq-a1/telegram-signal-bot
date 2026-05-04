@@ -1,4 +1,4 @@
-# Code Conventions — Signal Bot V1.1
+# Code Conventions — Signal Bot V1.3
 <!-- AI Agent: Đọc file này trước khi viết bất kỳ code nào -->
 
 ## Nguyên tắc tổng quát
@@ -292,6 +292,6 @@ class TradingViewWebhookPayload(BaseModel):
 ```
 ❌ tests/  (tạo riêng theo TEST_CASES.md)
 ❌ alembic/ (dùng raw SQL migration thay)
-❌ celery/  (V1.1 dùng FastAPI BackgroundTasks cho notify, chưa dùng queue)
-❌ redis/   (V1.1 dùng DB cho cooldown/duplicate check; rate limit in-memory)
+❌ celery/  (V1.3 dùng FastAPI BackgroundTasks cho notify, chưa dùng queue)
+❌ redis/   (V1.3 dùng DB cho cooldown/duplicate check; rate limit in-memory)
 ```

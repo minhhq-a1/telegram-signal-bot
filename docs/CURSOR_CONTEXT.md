@@ -1,9 +1,9 @@
-# Project Context — Telegram Signal Bot V1.1
+# Project Context — Telegram Signal Bot V1.3
 <!-- Dùng file này làm context chính khi làm việc với Cursor / Claude / Copilot -->
 
 ## Dự án là gì?
 
-Backend service nhận trading signal từ TradingView Pine Script v8.4 qua webhook, lọc 2 lớp, gửi notification lên Telegram, cung cấp dashboard/analytics/reverify admin.
+Backend service nhận trading signal từ TradingView Pine Script v8.4 qua webhook, lọc 2 lớp, gửi notification lên Telegram, cung cấp dashboard/analytics/reverify/config admin/calibration proposals.
 **Không auto-trade.** Chỉ là signal assistant.
 
 ---
@@ -31,7 +31,7 @@ app/
 │   └── database.py               # SQLAlchemy engine + get_db()
 ├── domain/
 │   ├── schemas.py                # Pydantic: TradingViewWebhookPayload, SignalMetadata
-│   └── models.py                 # SQLAlchemy ORM: core tables + V1.1 reverify
+│   └── models.py                 # SQLAlchemy ORM: core + outcomes/reverify/config audit/market context
 ├── repositories/
 │   ├── signal_repo.py            # idempotency, duplicate/cooldown queries
 │   ├── config_repo.py            # get_signal_bot_config() → dict (cached 30s)
@@ -39,9 +39,10 @@ app/
 ├── services/
 │   ├── auth_service.py           # validate_secret() dùng compare_digest
 │   ├── signal_normalizer.py      # TradingViewWebhookPayload → dict
-│   ├── filter_engine.py          # CORE LOGIC: run() → FilterExecutionResult
-│   ├── strategy_validator.py     # V1.1 strategy-specific validation
-│   ├── rescoring_engine.py       # V1.1 backend rescoring
+│   ├── filter_engine.py          # CORE orchestrator: run() → FilterExecutionResult
+│   ├── filter_rules/             # V1.3 extracted rule modules
+│   ├── strategy_validator.py     # strategy-specific validation
+│   ├── rescoring_engine.py       # backend rescoring
 │   ├── message_renderer.py       # render_main(), render_warning(), render_reject_admin()
 │   └── telegram_notifier.py      # notify() → (status, response, error_detail)
 └── main.py
@@ -172,8 +173,10 @@ class SignalMetadata(BaseModel):
 | `telegram_messages` | Delivery log |
 | `system_configs` | Config động — không hardcode threshold |
 | `market_events` | Lịch sự kiện news block (nhập tay) |
-| `signal_outcomes` | V2 stub — win/loss tracking |
-| `signal_reverify_results` | V1.1 reverify audit log |
+| `signal_outcomes` | Paper win/loss tracking |
+| `signal_reverify_results` | Reverify audit log |
+| `market_context_snapshots` | Backend regime/volatility snapshots |
+| `system_config_audit_logs` | Config version audit trail |
 
 **Thứ tự persist:** webhook_event → signal → filter_results → decision → commit → telegram background → telegram_messages
 
@@ -198,7 +201,7 @@ RuleSeverity:  INFO | LOW | MEDIUM | HIGH | CRITICAL
 3. **Persist trước notify sau** — business records được commit trước khi gọi Telegram
 4. **signal_id = idempotency key** — duplicate → 200 DUPLICATE, không process lại
 5. **HTF bias disabled V1** — không dùng fallback circular dependency
-6. **Config từ DB** — threshold, cooldown, V1.1 strategy/rescoring config trong `system_configs`, không hardcode
+6. **Config từ DB** — threshold, cooldown, strategy/rescoring/market_context config trong `system_configs`, không hardcode
 
 ---
 
@@ -227,5 +230,6 @@ RuleSeverity:  INFO | LOW | MEDIUM | HIGH | CRITICAL
 | `docs/API_REFERENCE.md` | Endpoint spec + Telegram format |
 | `docs/TASKS.md` | Task breakdown có dependency order |
 | `docs/TEST_CASES.md` | Test cases với input/output cụ thể |
-| `docs/CHANGELOG_V1.1.md` | V1.1 changes |
-| `docs/POST_V11_OPTIMIZATION_PLAN.md` | Post-V1.1 backlog/context |
+| `docs/VERSION_HISTORY.md` | Product history V1.0 → V1.3 |
+| `docs/RELEASE_V13_HANDOFF.md` | V1.3 release handoff |
+| `docs/POST_V13_BACKLOG.md` | Post-V1.3 backlog/context |

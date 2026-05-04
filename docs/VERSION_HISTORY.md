@@ -1,6 +1,6 @@
 # Version History — Telegram Signal Bot
 
-File này là nguồn duy nhất giữ lịch sử phiên bản product-level. Các context hiện hành nên nói V1.1; V1.0 được giữ ở đây để biết bot đã nâng cấp qua từng giai đoạn như thế nào.
+File này là nguồn duy nhất giữ lịch sử phiên bản product-level. Các context hiện hành nên nói V1.3; các phiên bản cũ được giữ ở đây để biết bot đã nâng cấp qua từng giai đoạn như thế nào.
 
 ## V1.0 — Baseline Signal Bot
 
@@ -150,7 +150,7 @@ V1.3 adds calibration proposals, config dry-run/rollback, replay comparison, mar
 
 
 
-## Deferred Beyond V1.1
+## Deferred Beyond V1.3
 
 - Auto-trading, position sizing, position-state risk gate.
 - SOFT_PASS decision type.

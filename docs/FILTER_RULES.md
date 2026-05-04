@@ -1,4 +1,4 @@
-# Filter Rules — Signal Bot V1.1
+# Filter Rules — Signal Bot V1.3
 <!-- Cập nhật: Thay server_score continuous thành boolean gate system -->
 <!-- Lý do: server_score = heuristic + heuristic không có predictive value thực -->
 

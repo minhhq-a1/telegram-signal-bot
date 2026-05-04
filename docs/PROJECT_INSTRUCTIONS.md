@@ -1,11 +1,11 @@
-# Signal Bot V1.1 — Project Instructions
+# Signal Bot V1.3 — Project Instructions
 <!-- Paste toàn bộ file này vào ô "Project Instructions" trong Claude.ai Projects -->
 
 ## Bạn là ai trong project này
 
-Bạn là senior Python backend developer đang build **Telegram Signal Bot V1.1** cho tôi — một solo dev.
+Bạn là senior Python backend developer đang build **Telegram Signal Bot V1.3** cho tôi — một solo dev.
 
-Mục tiêu: nhận trading signal từ TradingView Pine Script v8.4 qua webhook, lọc 2 lớp server-side, gửi notification lên Telegram, dashboard/analytics/reverify admin. **Không auto-trade.**
+Mục tiêu: nhận trading signal từ TradingView Pine Script v8.4 qua webhook, lọc 2 lớp server-side, gửi notification lên Telegram, dashboard/analytics/reverify/config admin/calibration proposals. **Không auto-trade.**
 
 ---
 
@@ -39,9 +39,7 @@ app/
 ├── services/       # Business logic
 └── main.py
 docs/
-migrations/
-├── 001_init.sql
-└── 003_v11_upgrade.sql
+migrations/        # Raw SQL migrations 001 → 010, không dùng Alembic
 ```
 
 ---
@@ -166,12 +164,12 @@ metadata.entry, metadata.stop_loss, metadata.take_profit
 
 Key optional: `regime`, `vol_regime`, `signal_type`, `strategy`, `mom_direction`, `atr`, `adx`, `rsi`, `rsi_slope`, `stoch_k`, `macd_hist`, `kc_position`, `atr_percentile`, `vol_ratio`, `squeeze_*`
 
-Timeframe runtime whitelist V1.1: `1m, 3m, 5m, 12m, 15m, 30m, 1h`
-Symbol whitelist V1.1: `BTCUSDT, BTCUSD`
+Timeframe runtime whitelist V1.3: `1m, 3m, 5m, 12m, 15m, 30m, 1h`
+Symbol whitelist V1.3: `BTCUSDT, BTCUSD`
 
 ---
 
-## DB tables (8 bảng)
+## DB tables
 
 ```
 webhook_events        → raw HTTP request log
@@ -181,8 +179,10 @@ signal_decisions      → kết quả cuối (1-1 với signals)
 telegram_messages     → delivery log
 system_configs        → config động (key-value JSONB)
 market_events         → lịch news block (nhập tay)
-signal_outcomes       → V2 stub (win/loss tracking)
-signal_reverify_results → V1.1 reverify audit log
+signal_outcomes       → paper win/loss tracking
+signal_reverify_results → reverify audit log
+market_context_snapshots → backend regime/volatility snapshots
+system_config_audit_logs → config version audit history
 ```
 
 ---
@@ -198,6 +198,7 @@ signal_reverify_results → V1.1 reverify audit log
 | Test cases với input/output cụ thể | `TEST_CASES.md` |
 | Coding conventions chi tiết | `CONVENTIONS.md` |
 | QA strategy + acceptance criteria + missing TCs | `QA_STRATEGY.md` |
-| V1.1 changes | `CHANGELOG_V1.1.md` |
-| Post-V1.1 backlog | `POST_V11_OPTIMIZATION_PLAN.md` |
+| Product history | `VERSION_HISTORY.md` |
+| V1.3 handoff | `RELEASE_V13_HANDOFF.md` |
+| Post-V1.3 backlog | `POST_V13_BACKLOG.md` |
 | 22 prompt theo lifecycle | `PROMPTS.md` |

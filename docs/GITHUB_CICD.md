@@ -1,4 +1,4 @@
-# GitHub CI/CD — Signal Bot V1.1
+# GitHub CI/CD — Signal Bot V1.3
 
 ## Mục tiêu
 

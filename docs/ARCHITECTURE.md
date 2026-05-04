@@ -1,4 +1,4 @@
-# Architecture — Telegram Signal Bot V1.1
+# Architecture — Telegram Signal Bot V1.3
 
 ## 1. Data Flow tổng thể
 
@@ -222,7 +222,7 @@ class RuleSeverity(str, Enum):
 
 ## 7. Performance targets
 
-| Metric | Target V1.1 |
+| Metric | Target V1.3 |
 |---|---|
 | Webhook response time | < 500ms average |
 | Telegram send time | < 2s (p95) |
