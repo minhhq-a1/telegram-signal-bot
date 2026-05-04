@@ -320,7 +320,7 @@ def test_get_signal_detail_returns_nested_contract(client, db_session):
     )
     db_session.commit()
 
-    response = client.get("/api/v1/signals/sig-detail-001")
+    response = client.get("/api/v1/signals/sig-detail-001", headers={"Authorization": "Bearer test-dash-token"})
 
     assert response.status_code == 200
     payload = response.json()

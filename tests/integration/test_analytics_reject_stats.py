@@ -90,8 +90,8 @@ class TestRejectStatsEndpoint:
         _seed_reject(db_session, sig, "SQ_NO_FIRED", severity="HIGH")
         _seed_fail_rule(db_session, sig, "SQ_BAD_MOM_DIRECTION", severity="HIGH")
 
-        resp1 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code")
-        resp2 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code")
+        resp1 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code", headers={"Authorization": "Bearer test-dash-token"})
+        resp2 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code", headers={"Authorization": "Bearer test-dash-token"})
 
         assert resp1.status_code == 200
         assert resp2.status_code == 200
