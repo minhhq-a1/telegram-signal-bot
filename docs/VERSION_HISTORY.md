@@ -95,11 +95,12 @@ V1.3 adds calibration proposals, config dry-run/rollback, replay comparison, mar
 
 ### Replay Improvements
 
-- **Compare mode:** `scripts/replay_payloads.py --compare-config-file`
+- **Compare mode:** `scripts/replay_payloads.py --input <path> --output <path> --compare-config-file <path>`
   - Compares current config vs proposed config on same payload set
+  - Requires `--input` (payload file or directory), `--output` (JSONL output file), and `--compare-config-file` (proposed config JSON)
   - Returns decision changes, route changes, changed rule codes
   - Summary output: total, changed decisions, main→warn, pass→reject, reject→pass
-- **Config file support:** `--config-file` and `--database-url` arguments for flexible replay scenarios
+- **Config file support:** `--config-file` argument for using custom config instead of default
 
 ### Dashboard
 

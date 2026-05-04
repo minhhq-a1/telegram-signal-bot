@@ -133,8 +133,9 @@ V1.3 "Decision Intelligence & Controlled Calibration" delivers service-boundary 
 
 ### CLI Tools
 
-- `scripts/replay_payloads.py --compare-config-file <path>`
+- `scripts/replay_payloads.py --input <path> --output <path> --compare-config-file <path>`
   - Compares current config vs proposed config on same payload set
+  - Requires `--input` (payload file or directory) and `--output` (JSONL output file)
   - Outputs JSONL with decision changes and summary statistics
 
 ---

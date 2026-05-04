@@ -197,9 +197,9 @@ echo '{
 
 # Run replay compare
 python scripts/replay_payloads.py \
-  docs/examples/sample_long_5m.json \
-  --compare-config-file /tmp/proposed_config.json \
-  --output /tmp/replay_compare.jsonl
+  --input docs/examples/sample_long_5m.json \
+  --output /tmp/replay_compare.jsonl \
+  --compare-config-file /tmp/proposed_config.json
 ```
 
 Expected:
