@@ -14,7 +14,7 @@ from app.api.dependencies import require_dashboard_auth
 from app.core.config import settings
 from app.repositories.config_repo import ConfigRepository
 from app.services.reject_codes import rule_code_to_reject_code
-from app.services.calibration_report import build_calibration_report
+from app.services.calibration_report import build_calibration_report, build_calibration_report_from_db
 
 _ALLOWED_GROUP_BY = frozenset(["signal_type", "reject_code"])
 _ALLOWED_OUTCOME_GROUP_BY = frozenset([
@@ -564,52 +564,7 @@ def get_calibration_report(
     db: Session = Depends(get_db),
     _auth: None = Depends(require_dashboard_auth),
 ):
-    since = datetime.now(timezone.utc) - timedelta(days=days)
-    outcome_rows = db.execute(
-        select(
-            Signal.id,
-            Signal.timeframe,
-            Signal.signal_type,
-            SignalOutcome.r_multiple,
-            SignalOutcome.is_win,
-            Signal.indicator_confidence,
-        )
-        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
-        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
-    ).all()
-
-    signal_ids = [row.id for row in outcome_rows]
-    filter_rows_by_signal: dict[str, list[dict]] = {signal_id: [] for signal_id in signal_ids}
-    if signal_ids:
-        filter_rows = db.execute(
-            select(
-                SignalFilterResult.signal_row_id,
-                SignalFilterResult.rule_code,
-                SignalFilterResult.result,
-                SignalFilterResult.severity,
-            ).where(SignalFilterResult.signal_row_id.in_(signal_ids))
-        ).all()
-        for row in filter_rows:
-            filter_rows_by_signal.setdefault(row.signal_row_id, []).append(
-                {"rule_code": row.rule_code, "result": row.result, "severity": row.severity}
-            )
-
-    payload_rows = [
-        {
-            "timeframe": row.timeframe,
-            "signal_type": row.signal_type,
-            "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
-            "is_win": row.is_win,
-            "indicator_confidence": float(row.indicator_confidence) if row.indicator_confidence is not None else None,
-            "filter_results": filter_rows_by_signal.get(row.id, []),
-        }
-        for row in outcome_rows
-    ]
-    report = build_calibration_report(payload_rows, min_samples=min_samples)
-    return {
-        "period_days": days,
-        **report,
-    }
+    return build_calibration_report_from_db(db, days=days, min_samples=min_samples)
 
 
 @router.get("/summary")

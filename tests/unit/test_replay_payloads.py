@@ -59,3 +59,56 @@ def test_replay_payloads_script_writes_jsonl(tmp_path: Path):
     row = json.loads(lines[0])
     assert row["status"] == "ok"
     assert row["decision"] in {"PASS_MAIN", "PASS_WARNING", "REJECT"}
+
+
+def test_replay_payloads_script_handles_invalid_json_per_file(tmp_path: Path):
+    """Malformed JSON in one file should emit error record, not crash entire batch."""
+    good_payload = {
+        "secret": "test-secret",
+        "signal": "long",
+        "symbol": "BTCUSDT",
+        "timeframe": "5m",
+        "timestamp": "2026-04-18T15:30:00Z",
+        "bar_time": "2026-04-18T15:30:00Z",
+        "price": 68250.5,
+        "source": "Bot_Webhook_v84",
+        "confidence": 0.82,
+        "metadata": {
+            "entry": 68250.5,
+            "stop_loss": 67980.0,
+            "take_profit": 68740.0,
+            "signal_type": "LONG_V73",
+        },
+    }
+    input_dir = tmp_path / "payloads"
+    input_dir.mkdir()
+    (input_dir / "good.json").write_text(json.dumps(good_payload), encoding="utf-8")
+    (input_dir / "bad.json").write_text("{invalid json", encoding="utf-8")
+    (input_dir / "good2.json").write_text(json.dumps(good_payload), encoding="utf-8")
+    output_file = tmp_path / "replay.jsonl"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/replay_payloads.py",
+            "--input",
+            str(input_dir),
+            "--output",
+            str(output_file),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "ok replayed 3 payload(s)" in completed.stdout
+    lines = output_file.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 3
+
+    records = [json.loads(line) for line in lines]
+    assert records[0]["status"] == "error"
+    assert "JSONDecodeError" in records[0]["error"]
+    assert "bad.json" in records[0]["file"]
+    assert records[1]["status"] == "ok"
+    assert records[2]["status"] == "ok"
+
