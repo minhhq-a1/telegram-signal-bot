@@ -74,7 +74,7 @@ V1.3 "Decision Intelligence & Controlled Calibration" delivers service-boundary 
 ### Cluster 5: Operator Tooling
 
 - **Task 9:** Replay config compare mode
-  - CLI arguments: `--config-file`, `--compare-config-file`, `--database-url`
+  - CLI arguments: `--input`, `--output`, `--config-file`, `--compare-config-file`
   - Compare mode: runs same payload through current and proposed config
   - Returns decision changes, route changes, changed rule codes
   - Summary output: total, changed_decisions, main_to_warn, pass_to_reject, reject_to_pass
