@@ -8,7 +8,7 @@ from app.repositories.config_repo import ConfigRepository
 
 
 @pytest.mark.integration
-def test_dry_run_returns_changed_paths(client: TestClient, db: Session) -> None:
+def test_dry_run_returns_changed_paths(client: TestClient, db_session: Session) -> None:
     response = client.post(
         "/api/v1/admin/config/signal-bot/dry-run",
         json={"config_value": {"confidence_thresholds": {"5m": 0.81}}, "change_reason": "Raise 5m threshold after calibration review"},
@@ -23,8 +23,8 @@ def test_dry_run_returns_changed_paths(client: TestClient, db: Session) -> None:
 
 
 @pytest.mark.integration
-def test_dry_run_does_not_mutate_config(client: TestClient, db: Session) -> None:
-    _, version_before = ConfigRepository(db).get_signal_bot_config_with_version()
+def test_dry_run_does_not_mutate_config(client: TestClient, db_session: Session) -> None:
+    _, version_before = ConfigRepository(db_session).get_signal_bot_config_with_version()
 
     client.post(
         "/api/v1/admin/config/signal-bot/dry-run",
@@ -32,7 +32,7 @@ def test_dry_run_does_not_mutate_config(client: TestClient, db: Session) -> None
         headers={"Authorization": "Bearer test-dash-token"},
     )
 
-    _, version_after = ConfigRepository(db).get_signal_bot_config_with_version()
+    _, version_after = ConfigRepository(db_session).get_signal_bot_config_with_version()
     assert version_after == version_before
 
 
@@ -63,8 +63,8 @@ def test_dry_run_rejects_invalid_config(client: TestClient) -> None:
 
 
 @pytest.mark.integration
-def test_rollback_restores_previous_config(client: TestClient, db: Session) -> None:
-    config_before, version_before = ConfigRepository(db).get_signal_bot_config_with_version()
+def test_rollback_restores_previous_config(client: TestClient, db_session: Session) -> None:
+    config_before, version_before = ConfigRepository(db_session).get_signal_bot_config_with_version()
 
     # Apply a change
     client.put(
@@ -73,7 +73,7 @@ def test_rollback_restores_previous_config(client: TestClient, db: Session) -> N
         headers={"Authorization": "Bearer test-dash-token"},
     )
 
-    _, version_after_change = ConfigRepository(db).get_signal_bot_config_with_version()
+    _, version_after_change = ConfigRepository(db_session).get_signal_bot_config_with_version()
     assert version_after_change == version_before + 1
 
     # Rollback
@@ -88,7 +88,7 @@ def test_rollback_restores_previous_config(client: TestClient, db: Session) -> N
     assert body["target_version"] == version_before
     assert body["new_version"] == version_before + 2
 
-    config_after_rollback, _ = ConfigRepository(db).get_signal_bot_config_with_version()
+    config_after_rollback, _ = ConfigRepository(db_session).get_signal_bot_config_with_version()
     assert config_after_rollback["confidence_thresholds"]["5m"] == config_before["confidence_thresholds"]["5m"]
 
 
