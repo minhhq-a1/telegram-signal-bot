@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone, timedelta
 from statistics import mean
 from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.domain.models import Signal, SignalFilterResult, SignalOutcome
 
 
 _ALLOWED_RECOMMENDATIONS = {
@@ -133,3 +139,52 @@ def _build_threshold_suggestions(rows_by_timeframe: dict[str, list[dict]], min_s
             }
         )
     return suggestions
+
+
+def rows_to_calibration_payload(outcome_rows: list, filter_rows_by_signal: dict[str, list[dict]]) -> list[dict]:
+    return [
+        {
+            "timeframe": row.timeframe,
+            "signal_type": row.signal_type,
+            "r_multiple": float(row.r_multiple) if row.r_multiple is not None else None,
+            "is_win": row.is_win,
+            "indicator_confidence": float(row.indicator_confidence) if row.indicator_confidence is not None else None,
+            "filter_results": filter_rows_by_signal.get(row.id, []),
+        }
+        for row in outcome_rows
+    ]
+
+
+def build_calibration_report_from_db(db: Session, days: int, min_samples: int) -> dict:
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    outcome_rows = db.execute(
+        select(
+            Signal.id,
+            Signal.timeframe,
+            Signal.signal_type,
+            SignalOutcome.r_multiple,
+            SignalOutcome.is_win,
+            Signal.indicator_confidence,
+        )
+        .join(Signal, Signal.id == SignalOutcome.signal_row_id)
+        .where(Signal.created_at >= since, SignalOutcome.outcome_status == "CLOSED")
+    ).all()
+
+    signal_ids = [row.id for row in outcome_rows]
+    filter_rows_by_signal: dict[str, list[dict]] = {signal_id: [] for signal_id in signal_ids}
+    if signal_ids:
+        filter_rows = db.execute(
+            select(
+                SignalFilterResult.signal_row_id,
+                SignalFilterResult.rule_code,
+                SignalFilterResult.result,
+                SignalFilterResult.severity,
+            ).where(SignalFilterResult.signal_row_id.in_(signal_ids))
+        ).all()
+        for row in filter_rows:
+            filter_rows_by_signal.setdefault(row.signal_row_id, []).append(
+                {"rule_code": row.rule_code, "result": row.result, "severity": row.severity}
+            )
+
+    report = build_calibration_report(rows_to_calibration_payload(outcome_rows, filter_rows_by_signal), min_samples)
+    return {"period_days": days, **report}
