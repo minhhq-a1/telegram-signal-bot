@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.domain.models import SystemConfig, SystemConfigAuditLog
 from app.core.logging import get_logger
+from app.services.config_validation import ConfigValidationError, validate_signal_bot_config
 
 logger = get_logger(__name__)
 
@@ -133,6 +134,11 @@ class ConfigRepository:
             },
         },
         "auto_create_open_outcomes": False,
+        "market_context": {
+            "enabled": False,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        },
     }
 
     def __init__(self, db: Session):
@@ -163,6 +169,11 @@ class ConfigRepository:
                 ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
                 config_record.config_value,
             )
+            # Validate on read (warning only, do not raise)
+            try:
+                validate_signal_bot_config(merged_config)
+            except ConfigValidationError as e:
+                logger.warning(f"signal_bot_config_validation_failed_on_read: {e}")
             # Cập nhật cache
             ConfigRepository._cached_config = merged_config
             ConfigRepository._cache_time = now
@@ -176,8 +187,14 @@ class ConfigRepository:
         stmt = select(SystemConfig).where(SystemConfig.config_key == "signal_bot_config")
         config_record = self.db.execute(stmt).scalar_one_or_none()
         if config_record and config_record.config_value:
+            merged_config = _deep_merge(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG, config_record.config_value)
+            # Validate on read (warning only, do not raise)
+            try:
+                validate_signal_bot_config(merged_config)
+            except ConfigValidationError as e:
+                logger.warning(f"signal_bot_config_validation_failed_on_read: {e}")
             return (
-                _deep_merge(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG, config_record.config_value),
+                merged_config,
                 int(config_record.version or 1),
             )
         return copy.deepcopy(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG), 1
@@ -189,13 +206,23 @@ class ConfigRepository:
         changed_by: str,
         change_reason: str,
     ) -> SystemConfig:
+        # Validate on write (strict, raise on error)
+        if config_key == "signal_bot_config":
+            merged_for_validation = _deep_merge(
+                ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
+                new_value,
+            )
+            validated_value = validate_signal_bot_config(merged_for_validation)
+        else:
+            validated_value = new_value
+
         stmt = select(SystemConfig).where(SystemConfig.config_key == config_key)
         config = self.db.execute(stmt).scalar_one_or_none()
         if config is None:
             config = SystemConfig(
                 id=str(uuid.uuid4()),
                 config_key=config_key,
-                config_value=new_value,
+                config_value=validated_value,
                 version=1,
                 updated_at=datetime.now(timezone.utc),
             )
@@ -203,7 +230,7 @@ class ConfigRepository:
             old_value = None
         else:
             old_value = copy.deepcopy(config.config_value)
-            config.config_value = new_value
+            config.config_value = validated_value
             config.version = int(config.version or 1) + 1
             config.updated_at = datetime.now(timezone.utc)
 
@@ -211,7 +238,7 @@ class ConfigRepository:
             id=str(uuid.uuid4()),
             config_key=config_key,
             old_value=old_value,
-            new_value=new_value,
+            new_value=validated_value,
             changed_by=changed_by,
             change_reason=change_reason,
             created_at=datetime.now(timezone.utc),

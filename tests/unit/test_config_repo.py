@@ -161,3 +161,79 @@ def test_fallback_config_does_not_share_nested_reference_with_defaults():
     assert ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"] is original_symbols
     assert "POISONED" not in ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"]
     ConfigRepository.reset_cache()
+
+
+# ── Validation tests ──────────────────────────────────────────────────────────
+
+def test_read_path_logs_warning_on_invalid_config():
+    """Read path should log warning but not raise on invalid config."""
+    from sqlalchemy import select
+    from app.domain.models import SystemConfig
+
+    db_mock = MagicMock()
+    mock_record = MagicMock()
+    # Invalid config: wrong type for allowed_symbols (should be list, not string)
+    mock_record.config_value = {
+        "allowed_symbols": "BTCUSDT",  # Invalid: should be list
+    }
+    db_mock.execute.return_value.scalar_one_or_none.return_value = mock_record
+
+    ConfigRepository.reset_cache()
+    repo = ConfigRepository(db=db_mock)
+
+    # Should not raise, just log warning
+    with patch("app.repositories.config_repo.logger") as mock_logger:
+        config = repo.get_signal_bot_config()
+        mock_logger.warning.assert_called_once()
+        assert "signal_bot_config_validation_failed_on_read" in str(mock_logger.warning.call_args)
+
+    # Should still return merged config (with invalid override)
+    assert config is not None
+    ConfigRepository.reset_cache()
+
+
+def test_write_path_raises_on_invalid_config():
+    """Write path should raise ConfigValidationError on invalid config."""
+    from app.services.config_validation import ConfigValidationError
+
+    db_mock = MagicMock()
+    db_mock.execute.return_value.scalar_one_or_none.return_value = None
+
+    repo = ConfigRepository(db=db_mock)
+
+    # Invalid config: wrong type for allowed_symbols
+    invalid_config = {
+        "allowed_symbols": "BTCUSDT",  # Invalid: should be list
+    }
+
+    with pytest.raises(ConfigValidationError):
+        repo.update_config_with_audit(
+            config_key="signal_bot_config",
+            new_value=invalid_config,
+            changed_by="test_user",
+            change_reason="test",
+        )
+
+
+def test_write_path_accepts_valid_config():
+    """Write path should accept valid config."""
+    db_mock = MagicMock()
+    db_mock.execute.return_value.scalar_one_or_none.return_value = None
+
+    repo = ConfigRepository(db=db_mock)
+
+    # Valid partial config (will be merged with defaults)
+    valid_config = {
+        "allowed_symbols": ["ETHUSDT"],
+        "rr_min_base": 2.0,
+    }
+
+    # Should not raise
+    result = repo.update_config_with_audit(
+        config_key="signal_bot_config",
+        new_value=valid_config,
+        changed_by="test_user",
+        change_reason="test",
+    )
+
+    assert result is not None
