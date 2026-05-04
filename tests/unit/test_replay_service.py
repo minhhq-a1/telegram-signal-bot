@@ -47,3 +47,32 @@ def test_compare_payload_reports_decision_fields() -> None:
     assert "current_decision" in record
     assert "proposed_decision" in record
     assert "changed_rule_codes" in record
+
+
+def test_summarize_compare_records_counts_decision_changes() -> None:
+    from app.services.replay_service import summarize_compare_records
+
+    records = [
+        {"status": "ok", "decision_changed": True, "current_route": "MAIN", "proposed_route": "WARN", "current_decision": "PASS_MAIN", "proposed_decision": "PASS_WARNING"},
+        {"status": "ok", "decision_changed": True, "current_route": "MAIN", "proposed_route": "NONE", "current_decision": "PASS_MAIN", "proposed_decision": "REJECT"},
+        {"status": "ok", "decision_changed": True, "current_route": "NONE", "proposed_route": "MAIN", "current_decision": "REJECT", "proposed_decision": "PASS_MAIN"},
+        {"status": "ok", "decision_changed": False, "current_route": "MAIN", "proposed_route": "MAIN", "current_decision": "PASS_MAIN", "proposed_decision": "PASS_MAIN"},
+        {"status": "error"},
+    ]
+
+    summary = summarize_compare_records(records)
+
+    assert summary["total"] == 5
+    assert summary["changed_decisions"] == 3
+    assert summary["main_to_warn"] == 1
+    assert summary["pass_to_reject"] == 1
+    assert summary["reject_to_pass"] == 1
+
+
+def test_summarize_compare_records_handles_empty_list() -> None:
+    from app.services.replay_service import summarize_compare_records
+
+    summary = summarize_compare_records([])
+
+    assert summary["total"] == 0
+    assert summary["changed_decisions"] == 0

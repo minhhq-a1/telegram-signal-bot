@@ -112,3 +112,58 @@ def test_replay_payloads_script_handles_invalid_json_per_file(tmp_path: Path):
     assert records[1]["status"] == "ok"
     assert records[2]["status"] == "ok"
 
+
+def test_replay_payloads_script_compare_mode(tmp_path: Path):
+    """Test --compare-config-file triggers compare mode and outputs summary."""
+    sample = {
+        "secret": "test-secret",
+        "signal": "long",
+        "symbol": "BTCUSDT",
+        "timeframe": "5m",
+        "timestamp": "2026-04-18T15:30:00Z",
+        "bar_time": "2026-04-18T15:30:00Z",
+        "price": 68250.5,
+        "source": "Bot_Webhook_v84",
+        "confidence": 0.82,
+        "metadata": {
+            "entry": 68250.5,
+            "stop_loss": 67980.0,
+            "take_profit": 68740.0,
+            "signal_type": "LONG_V73",
+        },
+    }
+    input_dir = tmp_path / "payloads"
+    input_dir.mkdir()
+    (input_dir / "sample.json").write_text(json.dumps(sample), encoding="utf-8")
+    output_file = tmp_path / "compare.jsonl"
+
+    from app.repositories.config_repo import ConfigRepository
+    proposed_config = {**ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG, "confidence_thresholds": {"5m": 0.95}}
+    config_file = tmp_path / "proposed.json"
+    config_file.write_text(json.dumps(proposed_config), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/replay_payloads.py",
+            "--input",
+            str(input_dir),
+            "--output",
+            str(output_file),
+            "--compare-config-file",
+            str(config_file),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "ok replayed 1 payload(s)" in completed.stdout
+    assert "Compare Summary:" in completed.stdout
+    lines = output_file.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    row = json.loads(lines[0])
+    assert row["status"] == "ok"
+    assert "current_decision" in row
+    assert "proposed_decision" in row
+
