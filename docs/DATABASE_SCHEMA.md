@@ -1,7 +1,7 @@
-# Database Schema — Signal Bot V1.1
+# Database Schema — Signal Bot V1.3
 
 **Database:** PostgreSQL 16  
-**Migration file:** `migrations/001_init.sql`
+**Migration files:** `migrations/001_init.sql` through `migrations/010_v13_market_context_index.sql`
 
 ---
 
@@ -314,7 +314,39 @@ ON market_events(start_time, end_time);
 -- Telegram delivery lookup
 CREATE INDEX idx_telegram_messages_signal_row_id
 ON telegram_messages(signal_row_id);
+
+-- Market context lookup (V1.3 - migration 010)
+CREATE INDEX idx_market_context_symbol_tf_source_bar_time
+ON market_context_snapshots(symbol, timeframe, source, bar_time DESC);
 ```
+
+**V1.3 Market Context Index:**
+
+Migration `010_v13_market_context_index.sql` adds an index for efficient market context snapshot lookup:
+
+```sql
+-- Migration 010: Market context lookup index for V1.3 at-or-before-close checks.
+
+CREATE INDEX IF NOT EXISTS idx_market_context_symbol_tf_source_bar_time
+ON market_context_snapshots(symbol, timeframe, source, bar_time DESC);
+```
+
+**Purpose:** Supports the `BACKEND_REGIME_MISMATCH` filter rule which queries for the most recent snapshot at or before signal bar_time within a tolerance window (default 10 minutes).
+
+**Query pattern:**
+```sql
+SELECT *
+FROM market_context_snapshots
+WHERE symbol = :symbol
+  AND timeframe = :timeframe
+  AND source = :source
+  AND bar_time >= :bar_time - INTERVAL '10 minutes'
+  AND bar_time <= :bar_time
+ORDER BY bar_time DESC
+LIMIT 1;
+```
+
+The index enables efficient lookup without full table scan. If `source` is frequently NULL in production queries, consider adding a second index on `(symbol, timeframe, bar_time DESC)` after analyzing query patterns with `EXPLAIN ANALYZE`.
 
 ---
 

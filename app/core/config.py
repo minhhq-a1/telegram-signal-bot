@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # App Config
     app_name: str = "Telegram Signal Bot"
-    app_version: str = "1.2.1"
+    app_version: str = "1.3.0"
     app_env: str = "dev"
     app_port: int = 8080  # Railway overrides via PORT env var in start.sh
     log_level: str = "INFO"
