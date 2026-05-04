@@ -1,4 +1,4 @@
-# Test Cases — Signal Bot V1.1
+# Test Cases — Signal Bot V1.3
 <!-- File này là catalog nghiệp vụ. Không dùng làm test harness chuẩn. -->
 
 ## Cách dùng file này

@@ -31,7 +31,7 @@ Kiểm tra service còn sống.
 {
   "status": "ok",
   "service": "telegram-signal-bot",
-  "version": "1.2.1"
+  "version": "1.3.0"
 }
 ```
 
