@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.repositories.config_repo import ConfigRepository, _deep_merge
+from app.repositories.config_repo import ConfigRepository, _deep_merge, diff_config_paths
 
 
 # ── _deep_merge unit tests ────────────────────────────────────────────────────
@@ -237,3 +237,47 @@ def test_write_path_accepts_valid_config():
     )
 
     assert result is not None
+
+
+# ── diff_config_paths tests ───────────────────────────────────────────────────
+
+def test_diff_config_paths_detects_scalar_change():
+    old = {"rr_min_base": 1.5}
+    new = {"rr_min_base": 2.0}
+    paths = diff_config_paths(old, new)
+    assert paths == ["rr_min_base"]
+
+
+def test_diff_config_paths_detects_nested_change():
+    old = {"confidence_thresholds": {"5m": 0.78, "1h": 0.70}}
+    new = {"confidence_thresholds": {"5m": 0.81, "1h": 0.70}}
+    paths = diff_config_paths(old, new)
+    assert paths == ["confidence_thresholds.5m"]
+
+
+def test_diff_config_paths_detects_multiple_changes():
+    old = {"confidence_thresholds": {"5m": 0.78, "1h": 0.70}, "rr_min_base": 1.5}
+    new = {"confidence_thresholds": {"5m": 0.81, "1h": 0.75}, "rr_min_base": 2.0}
+    paths = diff_config_paths(old, new)
+    assert set(paths) == {"confidence_thresholds.5m", "confidence_thresholds.1h", "rr_min_base"}
+
+
+def test_diff_config_paths_detects_added_key():
+    old = {"rr_min_base": 1.5}
+    new = {"rr_min_base": 1.5, "new_key": "value"}
+    paths = diff_config_paths(old, new)
+    assert paths == ["new_key"]
+
+
+def test_diff_config_paths_detects_removed_key():
+    old = {"rr_min_base": 1.5, "old_key": "value"}
+    new = {"rr_min_base": 1.5}
+    paths = diff_config_paths(old, new)
+    assert paths == ["old_key"]
+
+
+def test_diff_config_paths_returns_empty_for_identical():
+    old = {"confidence_thresholds": {"5m": 0.78}, "rr_min_base": 1.5}
+    new = {"confidence_thresholds": {"5m": 0.78}, "rr_min_base": 1.5}
+    paths = diff_config_paths(old, new)
+    assert paths == []
