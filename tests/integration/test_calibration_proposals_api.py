@@ -5,8 +5,11 @@ from fastapi.testclient import TestClient
 
 
 @pytest.mark.integration
-def test_calibration_proposals_endpoint_returns_proposals(client: TestClient, auth_headers: dict) -> None:
-    response = client.get("/api/v1/analytics/calibration/proposals?days=90&min_samples=30", headers=auth_headers)
+def test_calibration_proposals_endpoint_returns_proposals(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/analytics/calibration/proposals?days=90&min_samples=30",
+        headers={"Authorization": "Bearer test-dash-token"}
+    )
 
     assert response.status_code == 200
     body = response.json()

@@ -8,11 +8,11 @@ from app.repositories.config_repo import ConfigRepository
 
 
 @pytest.mark.integration
-def test_dry_run_returns_changed_paths(client: TestClient, db: Session, auth_headers: dict) -> None:
+def test_dry_run_returns_changed_paths(client: TestClient, db: Session) -> None:
     response = client.post(
         "/api/v1/admin/config/signal-bot/dry-run",
         json={"config_value": {"confidence_thresholds": {"5m": 0.81}}, "change_reason": "Raise 5m threshold after calibration review"},
-        headers=auth_headers,
+        headers={"Authorization": "Bearer test-dash-token"},
     )
 
     assert response.status_code == 200
@@ -23,13 +23,13 @@ def test_dry_run_returns_changed_paths(client: TestClient, db: Session, auth_hea
 
 
 @pytest.mark.integration
-def test_dry_run_does_not_mutate_config(client: TestClient, db: Session, auth_headers: dict) -> None:
+def test_dry_run_does_not_mutate_config(client: TestClient, db: Session) -> None:
     _, version_before = ConfigRepository(db).get_signal_bot_config_with_version()
 
     client.post(
         "/api/v1/admin/config/signal-bot/dry-run",
         json={"config_value": {"confidence_thresholds": {"5m": 0.99}}, "change_reason": "Test dry-run does not persist"},
-        headers=auth_headers,
+        headers={"Authorization": "Bearer test-dash-token"},
     )
 
     _, version_after = ConfigRepository(db).get_signal_bot_config_with_version()
@@ -37,11 +37,11 @@ def test_dry_run_does_not_mutate_config(client: TestClient, db: Session, auth_he
 
 
 @pytest.mark.integration
-def test_dry_run_rejects_short_reason(client: TestClient, auth_headers: dict) -> None:
+def test_dry_run_rejects_short_reason(client: TestClient) -> None:
     response = client.post(
         "/api/v1/admin/config/signal-bot/dry-run",
         json={"config_value": {"confidence_thresholds": {"5m": 0.81}}, "change_reason": "short"},
-        headers=auth_headers,
+        headers={"Authorization": "Bearer test-dash-token"},
     )
 
     assert response.status_code == 400
@@ -50,11 +50,11 @@ def test_dry_run_rejects_short_reason(client: TestClient, auth_headers: dict) ->
 
 
 @pytest.mark.integration
-def test_dry_run_rejects_invalid_config(client: TestClient, auth_headers: dict) -> None:
+def test_dry_run_rejects_invalid_config(client: TestClient) -> None:
     response = client.post(
         "/api/v1/admin/config/signal-bot/dry-run",
         json={"config_value": {"confidence_thresholds": {"5m": 1.5}}, "change_reason": "Invalid threshold over 1.0"},
-        headers=auth_headers,
+        headers={"Authorization": "Bearer test-dash-token"},
     )
 
     assert response.status_code == 400
@@ -63,14 +63,14 @@ def test_dry_run_rejects_invalid_config(client: TestClient, auth_headers: dict) 
 
 
 @pytest.mark.integration
-def test_rollback_restores_previous_config(client: TestClient, db: Session, auth_headers: dict) -> None:
+def test_rollback_restores_previous_config(client: TestClient, db: Session) -> None:
     config_before, version_before = ConfigRepository(db).get_signal_bot_config_with_version()
 
     # Apply a change
     client.put(
         "/api/v1/admin/config/signal-bot",
         json={"config_value": {"confidence_thresholds": {"5m": 0.88}}, "change_reason": "Test change for rollback"},
-        headers=auth_headers,
+        headers={"Authorization": "Bearer test-dash-token"},
     )
 
     _, version_after_change = ConfigRepository(db).get_signal_bot_config_with_version()
@@ -80,7 +80,7 @@ def test_rollback_restores_previous_config(client: TestClient, db: Session, auth
     response = client.post(
         "/api/v1/admin/config/signal-bot/rollback",
         json={"target_version": version_before, "change_reason": "Rollback test change"},
-        headers=auth_headers,
+        headers={"Authorization": "Bearer test-dash-token"},
     )
 
     assert response.status_code == 200
