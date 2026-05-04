@@ -238,7 +238,7 @@ class ConfigRepository:
             id=str(uuid.uuid4()),
             config_key=config_key,
             old_value=old_value,
-            new_value=new_value,
+            new_value=validated_value,
             changed_by=changed_by,
             change_reason=change_reason,
             created_at=datetime.now(timezone.utc),
