@@ -604,12 +604,17 @@
                 renderSignals(data);
                 renderOutcomes(data);
                 renderCharts(data);
-
-                const proposals = await fetchJSON(`/api/v1/analytics/calibration/proposals?days=90&min_samples=30`);
-                renderProposals(proposals);
             } catch (err) {
                 console.error(err);
                 document.getElementById('error-banner').classList.add('show');
+            }
+
+            try {
+                const proposals = await fetchJSON(`/api/v1/analytics/calibration/proposals?days=90&min_samples=30`);
+                renderProposals(proposals);
+            } catch (err) {
+                console.error('Failed to load proposals:', err);
+                document.getElementById('proposal-list').innerHTML = '<div class="empty-state">Failed to load proposals.</div>';
             }
         }
 

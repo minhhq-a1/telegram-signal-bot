@@ -29,7 +29,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--persist", default="false")
     parser.add_argument("--config-file")
     parser.add_argument("--compare-config-file")
-    parser.add_argument("--database-url")
     return parser
 
 
