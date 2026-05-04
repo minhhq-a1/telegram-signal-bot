@@ -547,3 +547,190 @@ def test_duplicate_check_uses_repository_entry_range_lookup():
         exclude_signal_id="test-001",
     )
     engine.signal_repo.find_recent_similar.assert_not_called()
+
+
+# =============================================================================
+# V1.3 Market Context Tests
+# =============================================================================
+
+def test_market_context_regime_mismatch_warns():
+    """Market context enabled + regime mismatch → WARN MEDIUM → PASS_WARNING"""
+    from datetime import datetime, timezone
+
+    config_overrides = {
+        "market_context": {
+            "enabled": True,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        }
+    }
+    engine = make_filter_engine(config_overrides)
+
+    # Mock market_context_repo
+    mock_snapshot = MagicMock()
+    mock_snapshot.backend_regime = "STRONG_TREND_UP"
+    mock_market_context_repo = MagicMock()
+    mock_market_context_repo.find_snapshot.return_value = mock_snapshot
+    engine.market_context_repo = mock_market_context_repo
+
+    # Signal has WEAK_TREND_DOWN, snapshot has STRONG_TREND_UP → mismatch
+    signal = make_signal(
+        regime="WEAK_TREND_DOWN",
+        bar_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    )
+
+    result = engine.run(signal)
+
+    assert result.final_decision.value == "PASS_WARNING"
+    assert result.route.value == "WARN"
+
+    # Check BACKEND_REGIME_MISMATCH rule
+    mc_rule = next((r for r in result.filter_results if r.rule_code == "BACKEND_REGIME_MISMATCH"), None)
+    assert mc_rule is not None
+    assert mc_rule.result.value == "WARN"
+    assert mc_rule.severity.value == "MEDIUM"
+    assert mc_rule.details["payload_regime"] == "WEAK_TREND_DOWN"
+    assert mc_rule.details["backend_regime"] == "STRONG_TREND_UP"
+
+
+def test_market_context_regime_match_passes():
+    """Market context enabled + regime match → PASS"""
+    from datetime import datetime, timezone
+
+    config_overrides = {
+        "market_context": {
+            "enabled": True,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        }
+    }
+    engine = make_filter_engine(config_overrides)
+
+    # Mock market_context_repo
+    mock_snapshot = MagicMock()
+    mock_snapshot.backend_regime = "WEAK_TREND_DOWN"
+    mock_market_context_repo = MagicMock()
+    mock_market_context_repo.find_snapshot.return_value = mock_snapshot
+    engine.market_context_repo = mock_market_context_repo
+
+    # Signal and snapshot both have WEAK_TREND_DOWN → match
+    signal = make_signal(
+        regime="WEAK_TREND_DOWN",
+        bar_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    )
+
+    result = engine.run(signal)
+
+    assert result.final_decision.value == "PASS_MAIN"
+
+    # Check BACKEND_REGIME_MISMATCH rule
+    mc_rule = next((r for r in result.filter_results if r.rule_code == "BACKEND_REGIME_MISMATCH"), None)
+    assert mc_rule is not None
+    assert mc_rule.result.value == "PASS"
+
+
+def test_market_context_disabled_passes():
+    """Market context disabled → PASS (no check)"""
+    from datetime import datetime, timezone
+
+    config_overrides = {
+        "market_context": {
+            "enabled": False,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        }
+    }
+    engine = make_filter_engine(config_overrides)
+
+    # Even with mismatch, should pass because disabled
+    signal = make_signal(
+        regime="WEAK_TREND_DOWN",
+        bar_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    )
+
+    result = engine.run(signal)
+
+    assert result.final_decision.value == "PASS_MAIN"
+
+
+def test_market_context_no_snapshot_passes():
+    """Market context enabled but no snapshot found → PASS (graceful degradation)"""
+    from datetime import datetime, timezone
+
+    config_overrides = {
+        "market_context": {
+            "enabled": True,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        }
+    }
+    engine = make_filter_engine(config_overrides)
+
+    # Mock market_context_repo returning None
+    mock_market_context_repo = MagicMock()
+    mock_market_context_repo.find_snapshot.return_value = None
+    engine.market_context_repo = mock_market_context_repo
+
+    signal = make_signal(
+        regime="WEAK_TREND_DOWN",
+        bar_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    )
+
+    result = engine.run(signal)
+
+    assert result.final_decision.value == "PASS_MAIN"
+
+
+def test_market_context_repo_none_does_not_crash():
+    """Issue #35.1: enabled=true with market_context_repo=None → no crash, advisory skipped"""
+    from datetime import datetime, timezone
+
+    config_overrides = {
+        "market_context": {
+            "enabled": True,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        }
+    }
+
+    # Create engine with market_context_repo=None
+    config = {
+        "allowed_symbols": ["BTCUSDT"],
+        "allowed_timeframes": ["5m"],
+        "confidence_thresholds": {"5m": 0.78},
+        "cooldown_minutes": {"5m": 10},
+        "rr_min_base": 1.5,
+        "rr_min_squeeze": 2.0,
+        "duplicate_price_tolerance_pct": 0.002,
+        "enable_news_block": False,
+        "strategy_thresholds": {
+            "LONG_V73": {"rsi_max": 35, "stoch_k_max": 20},
+        },
+        "rescoring": {},
+        "score_pass_threshold": 75,
+    }
+    config.update(config_overrides)
+
+    mock_signal_repo = MagicMock()
+    mock_signal_repo.find_recent_pass_main_same_side.return_value = []
+    mock_signal_repo.find_recent_similar_by_entry_range.return_value = []
+
+    mock_market_event_repo = MagicMock()
+    mock_market_event_repo.find_active_around.return_value = []
+
+    # Pass None for market_context_repo
+    engine = FilterEngine(config, mock_signal_repo, mock_market_event_repo, market_context_repo=None)
+
+    signal = make_signal(
+        regime="WEAK_TREND_DOWN",
+        bar_time=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    )
+
+    # Should not crash, should pass
+    result = engine.run(signal)
+
+    assert result.final_decision.value == "PASS_MAIN"
+
+    # BACKEND_REGIME_MISMATCH should not be in results (skipped)
+    rule_codes = [r.rule_code for r in result.filter_results]
+    assert "BACKEND_REGIME_MISMATCH" not in rule_codes

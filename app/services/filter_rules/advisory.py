@@ -133,3 +133,5 @@ def check_backend_score(signal: dict, config: dict, results: list[FilterResult])
             "BACKEND_SCORE_THRESHOLD", "rescoring", RuleResult.PASS, RuleSeverity.INFO,
             0.0, {"score": backend_score, "threshold": threshold, "items": items},
         ))
+
+

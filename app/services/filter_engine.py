@@ -4,7 +4,7 @@ from typing import Any
 from app.core.enums import RuleResult, RuleSeverity, DecisionType, TelegramRoute
 from app.services.filter_rules.types import FilterResult, FilterExecutionResult, has_fail
 from app.services.filter_rules.routing import decide, build_decision_reason
-from app.services.filter_rules import validation, trade_math, business, advisory
+from app.services.filter_rules import validation, trade_math, business, advisory, market_context
 
 
 class FilterEngine:
@@ -12,10 +12,11 @@ class FilterEngine:
     V1.3 orchestrator: delegates rule execution to focused modules.
     Preserves exact phase order and public API from V1.0-V1.2.
     """
-    def __init__(self, config: dict, signal_repo: Any, market_event_repo: Any):
+    def __init__(self, config: dict, signal_repo: Any, market_event_repo: Any, market_context_repo: Any = None):
         self.config = config
         self.signal_repo = signal_repo
         self.market_event_repo = market_event_repo
+        self.market_context_repo = market_context_repo
 
     def run(self, signal: dict) -> FilterExecutionResult:
         results: list[FilterResult] = []
@@ -53,6 +54,8 @@ class FilterEngine:
             return self._build_result(results, signal, "Business rule failed")
 
         # Phase 3b: Advisory warnings
+        if self.market_context_repo is not None:
+            market_context.check_market_context(signal, self.config, self.market_context_repo, results)
         advisory.check_volatility(signal, self.config, results)
         advisory.check_cooldown(signal, self.config, self.signal_repo, results)
         advisory.check_low_volume(signal, self.config, results)
