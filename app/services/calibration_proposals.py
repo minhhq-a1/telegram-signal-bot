@@ -19,7 +19,10 @@ def build_calibration_proposals(
         samples = int(item.get("samples") or 0)
         if samples < min_samples:
             continue
-        current = float(current_config.get("confidence_thresholds", {}).get(timeframe))
+        current_value = current_config.get("confidence_thresholds", {}).get(timeframe)
+        if current_value is None:
+            continue
+        current = float(current_value)
         raw_suggested = float(item["suggested"])
         max_step = 0.03
         if raw_suggested > current:
