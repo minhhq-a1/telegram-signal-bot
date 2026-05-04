@@ -134,7 +134,11 @@ class ConfigRepository:
             },
         },
         "auto_create_open_outcomes": False,
-        "market_context": {},
+        "market_context": {
+            "enabled": False,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        },
     }
 
     def __init__(self, db: Session):
@@ -208,7 +212,9 @@ class ConfigRepository:
                 ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
                 new_value,
             )
-            validate_signal_bot_config(merged_for_validation)
+            validated_value = validate_signal_bot_config(merged_for_validation)
+        else:
+            validated_value = new_value
 
         stmt = select(SystemConfig).where(SystemConfig.config_key == config_key)
         config = self.db.execute(stmt).scalar_one_or_none()
@@ -216,7 +222,7 @@ class ConfigRepository:
             config = SystemConfig(
                 id=str(uuid.uuid4()),
                 config_key=config_key,
-                config_value=new_value,
+                config_value=validated_value,
                 version=1,
                 updated_at=datetime.now(timezone.utc),
             )
@@ -224,7 +230,7 @@ class ConfigRepository:
             old_value = None
         else:
             old_value = copy.deepcopy(config.config_value)
-            config.config_value = new_value
+            config.config_value = validated_value
             config.version = int(config.version or 1) + 1
             config.updated_at = datetime.now(timezone.utc)
 

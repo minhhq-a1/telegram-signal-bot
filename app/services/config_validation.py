@@ -1,7 +1,7 @@
 """Validation service for signal_bot_config using Pydantic v2."""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
 class ConfigValidationError(Exception):
@@ -9,12 +9,21 @@ class ConfigValidationError(Exception):
     pass
 
 
-class SignalBotConfigSchema(BaseModel):
+class MarketContextConfig(BaseModel):
+    """Nested model for market_context configuration."""
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = False
+    regime_mismatch_mode: str = "WARN"
+    snapshot_max_age_minutes: int = Field(default=10, gt=0)
+
+
+class SignalBotConfigModel(BaseModel):
     """Pydantic v2 schema for signal_bot_config.
 
-    Extra keys are allowed for forward compatibility (e.g., future feature flags).
+    Extra keys are forbidden to catch typos and invalid config keys.
     """
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "forbid"}
 
     allowed_symbols: list[str] = Field(min_length=1)
     allowed_timeframes: list[str] = Field(min_length=1)
@@ -33,19 +42,45 @@ class SignalBotConfigSchema(BaseModel):
     strategy_thresholds: dict[str, dict] | None = None
     rescoring: dict[str, dict] | None = None
     auto_create_open_outcomes: bool | None = None
-    market_context: dict = Field(default_factory=dict)
+    market_context: MarketContextConfig = Field(default_factory=MarketContextConfig)
+
+    @field_validator("confidence_thresholds")
+    @classmethod
+    def validate_confidence_range(cls, v: dict[str, float]) -> dict[str, float]:
+        """Ensure all confidence threshold values are in [0, 1]."""
+        for timeframe, threshold in v.items():
+            if not (0 <= threshold <= 1):
+                raise ValueError(
+                    f"confidence_thresholds[{timeframe}] = {threshold} out of range [0, 1]"
+                )
+        return v
+
+    @field_validator("cooldown_minutes")
+    @classmethod
+    def validate_cooldown_positive(cls, v: dict[str, int]) -> dict[str, int]:
+        """Ensure all cooldown values are positive."""
+        for timeframe, minutes in v.items():
+            if minutes <= 0:
+                raise ValueError(
+                    f"cooldown_minutes[{timeframe}] = {minutes} must be positive"
+                )
+        return v
 
 
-def validate_signal_bot_config(config: dict) -> None:
+def validate_signal_bot_config(config: dict) -> dict:
     """Validate signal_bot_config against schema.
 
     Args:
         config: The config dict to validate
 
+    Returns:
+        The validated config as a dict (Pydantic model dumped back to dict)
+
     Raises:
         ConfigValidationError: If validation fails
     """
     try:
-        SignalBotConfigSchema.model_validate(config)
+        validated_model = SignalBotConfigModel.model_validate(config)
+        return validated_model.model_dump()
     except ValidationError as e:
         raise ConfigValidationError(f"Invalid signal_bot_config: {e}") from e
