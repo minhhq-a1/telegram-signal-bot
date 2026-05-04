@@ -22,6 +22,11 @@ class _NoopMarketRepo:
         return []
 
 
+class _NoopMarketContextRepo:
+    def find_snapshot(self, *args, **kwargs):
+        return None
+
+
 class ReplayService:
     def __init__(self, config: dict):
         self.config = config
@@ -30,7 +35,7 @@ class ReplayService:
         try:
             payload = TradingViewWebhookPayload.model_validate(payload_dict)
             norm = SignalNormalizer.normalize("replay", payload)
-            result = FilterEngine(self.config, _NoopSignalRepo(), _NoopMarketRepo()).run(norm)
+            result = FilterEngine(self.config, _NoopSignalRepo(), _NoopMarketRepo(), _NoopMarketContextRepo()).run(norm)
             return {
                 "file": file_label,
                 "status": "ok",

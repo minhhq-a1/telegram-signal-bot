@@ -8,13 +8,19 @@ class MarketContextService:
     def __init__(self, repo):
         self.repo = repo
 
-    def compare_regime(self, signal: dict, enabled: bool) -> FilterResult | None:
+    def compare_regime(self, signal: dict, enabled: bool, snapshot_max_age_minutes: int = 10) -> FilterResult | None:
         if not enabled:
             return None
         bar_time = signal.get("bar_time")
         if bar_time is None:
             return None
-        snapshot = self.repo.find_snapshot(signal["symbol"], signal["timeframe"], bar_time)
+        snapshot = self.repo.find_snapshot(
+            signal["symbol"],
+            signal["timeframe"],
+            bar_time,
+            source=signal.get("source"),
+            max_age_minutes=snapshot_max_age_minutes,
+        )
         if snapshot is None or snapshot.backend_regime is None:
             return None
         payload_regime = signal.get("regime")

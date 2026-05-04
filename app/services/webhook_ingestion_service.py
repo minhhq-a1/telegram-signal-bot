@@ -19,6 +19,7 @@ from app.repositories.config_repo import ConfigRepository
 from app.repositories.decision_repo import DecisionRepository
 from app.repositories.filter_result_repo import FilterResultRepository
 from app.repositories.market_event_repo import MarketEventRepository
+from app.repositories.market_context_repo import MarketContextRepository
 from app.repositories.signal_repo import SignalRepository
 from app.repositories.telegram_repo import TelegramRepository
 from app.repositories.webhook_event_repo import WebhookEventRepository
@@ -57,6 +58,7 @@ class WebhookIngestionService:
         telegram_repo_cls: type[TelegramRepository] = TelegramRepository,
         config_repo_cls: type[ConfigRepository] = ConfigRepository,
         market_event_repo_cls: type[MarketEventRepository] = MarketEventRepository,
+        market_context_repo_cls: type[MarketContextRepository] = MarketContextRepository,
     ) -> None:
         self.db = db
         self.notifier = notifier
@@ -69,6 +71,7 @@ class WebhookIngestionService:
         self.outcome_repo = OutcomeRepository(db)
         self.config_repo = config_repo_cls(db)
         self.market_repo = market_event_repo_cls(db)
+        self.market_context_repo = market_context_repo_cls(db)
         self.background_session_factory = sessionmaker(
             autocommit=False,
             autoflush=False,
@@ -149,7 +152,7 @@ class WebhookIngestionService:
                 # while still recording version when available from the repository.
             except Exception:
                 config_version = 1
-        engine = FilterEngine(config, self.signal_repo, self.market_repo)
+        engine = FilterEngine(config, self.signal_repo, self.market_repo, self.market_context_repo)
         filter_result = engine.run(norm_data)
 
         signal_obj.server_score = filter_result.server_score
