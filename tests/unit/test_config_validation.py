@@ -130,3 +130,32 @@ def test_rejects_tolerance_above_one():
     with pytest.raises(ConfigValidationError) as exc:
         validate_signal_bot_config(config)
     assert "duplicate_price_tolerance_pct" in str(exc.value)
+
+
+def test_accepts_rr_tolerance_zero():
+    """rr_tolerance_pct=0.0 is valid per spec."""
+    config = {
+        "allowed_symbols": ["BTCUSDT"],
+        "allowed_timeframes": ["1m"],
+        "confidence_thresholds": {"1m": 0.8},
+        "cooldown_minutes": {"1m": 5},
+        "rr_min_base": 1.5,
+        "rr_tolerance_pct": 0.0,
+    }
+    validated = validate_signal_bot_config(config)
+    assert validated["rr_tolerance_pct"] == 0.0
+
+
+def test_rejects_rr_tolerance_above_one():
+    """rr_tolerance_pct >= 1 raises ConfigValidationError."""
+    config = {
+        "allowed_symbols": ["BTCUSDT"],
+        "allowed_timeframes": ["1m"],
+        "confidence_thresholds": {"1m": 0.8},
+        "cooldown_minutes": {"1m": 5},
+        "rr_min_base": 1.5,
+        "rr_tolerance_pct": 2.0,
+    }
+    with pytest.raises(ConfigValidationError) as exc:
+        validate_signal_bot_config(config)
+    assert "rr_tolerance_pct" in str(exc.value)

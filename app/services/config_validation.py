@@ -76,12 +76,20 @@ class SignalBotConfigModel(BaseModel):
             raise ValueError("must contain at least one non-empty string")
         return value
 
-    @field_validator("duplicate_price_tolerance_pct", "rr_tolerance_pct")
+    @field_validator("duplicate_price_tolerance_pct")
     @classmethod
-    def percentage_below_one(cls, value: float | None) -> float | None:
-        """Ensure percentage values are between 0 and 1 (exclusive)."""
+    def duplicate_tolerance_range(cls, value: float | None) -> float | None:
+        """Ensure duplicate_price_tolerance_pct is between 0 and 1 (exclusive)."""
         if value is not None and not (0.0 < value < 1.0):
             raise ValueError("must be between 0 and 1 (exclusive)")
+        return value
+
+    @field_validator("rr_tolerance_pct")
+    @classmethod
+    def rr_tolerance_range(cls, value: float | None) -> float | None:
+        """Ensure rr_tolerance_pct is between 0 (inclusive) and 1 (exclusive)."""
+        if value is not None and not (0.0 <= value < 1.0):
+            raise ValueError("must be between 0 (inclusive) and 1 (exclusive)")
         return value
 
 
