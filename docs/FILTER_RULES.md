@@ -261,6 +261,49 @@ Future — Khi có independent market data:
     SHORT WARN nếu price > EMA200_15m
 ```
 
+### BACKEND_REGIME_MISMATCH (V1.3+)
+```
+Group:    market_context
+Severity: MEDIUM
+Result:   PASS | WARN
+
+Kiểm tra regime từ backend market context snapshot so với regime trong payload.
+
+Config:
+    market_context.enabled: true/false
+    market_context.regime_mismatch_mode: "WARN"
+    market_context.snapshot_max_age_minutes: 10 (default)
+
+Logic:
+    - Nếu market_context.enabled = false → skip rule (không append FilterResult)
+    - Nếu signal thiếu bar_time → skip rule
+    - Query market_context_snapshots:
+        WHERE symbol = signal.symbol
+          AND timeframe = signal.timeframe
+          AND source = signal.source (nếu có)
+          AND bar_time >= (signal.bar_time - max_age_minutes)
+          AND bar_time <= signal.bar_time
+        ORDER BY bar_time DESC
+        LIMIT 1
+    - Nếu không tìm thấy snapshot hoặc snapshot.backend_regime is NULL → skip rule
+    - Nếu payload.regime == snapshot.backend_regime → PASS
+    - Nếu payload.regime != snapshot.backend_regime → WARN MEDIUM
+
+On WARN:  Route sang WARNING channel
+On PASS:  Không ảnh hưởng route
+
+⚠️ V1.3 Advisory Mode:
+   Rule này chỉ trả WARN, không bao giờ FAIL.
+   Mục đích: thu thập data về regime mismatch frequency và impact.
+   Sau 4-6 tuần paper trading, review correlation với outcomes để quyết định
+   có nên tăng severity hoặc thêm FAIL mode.
+
+⚠️ Snapshot Tolerance:
+   Lookup dùng asymmetric window: chỉ lấy snapshot AT OR BEFORE bar_time,
+   không lấy snapshot sau bar_time (tránh look-ahead bias).
+   max_age_minutes default 10 phút — điều chỉnh nếu backend update frequency thay đổi.
+```
+
 ### NEWS_BLOCK
 ```
 Config: enable_news_block=true
@@ -419,6 +462,11 @@ NEWS_BLOCK
 DUPLICATE_SUPPRESSION
 COOLDOWN_ACTIVE
 HTF_BIAS_CHECK        ← disabled, placeholder cho future independent market data
+```
+
+### Market Context group (V1.3+)
+```
+BACKEND_REGIME_MISMATCH
 ```
 
 ### Routing group

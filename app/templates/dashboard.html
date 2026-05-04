@@ -367,12 +367,12 @@
                 <section class="panel">
                     <div class="panel-header">
                         <div>
-                            <h2>Calibration Insights</h2>
-                            <p>Advisory-only section for the next analytics iteration.</p>
+                            <h2>Decision Intelligence</h2>
+                            <p>Calibration proposals for threshold adjustments based on closed outcomes.</p>
                         </div>
                     </div>
-                    <div id="calibration-list" class="subgrid">
-                        <div class="empty-state">No calibration insights yet.</div>
+                    <div id="proposal-list" class="subgrid">
+                        <div class="empty-state">No calibration proposals.</div>
                     </div>
                 </section>
             </div>
@@ -426,6 +426,12 @@
         function formatNum(value) {
             if (value === null || value === undefined) return '—';
             return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
         function setHeader(data) {
@@ -526,14 +532,21 @@
             `).join('');
         }
 
-        function renderCalibration(data) {
-            const rows = data.calibration_insights || [];
-            const list = document.getElementById('calibration-list');
+        function renderProposals(data) {
+            const list = document.getElementById('proposal-list');
+            const rows = data.proposals || [];
             if (!rows.length) {
-                list.innerHTML = '<div class="empty-state">No calibration insights yet. Advisory only.</div>';
+                list.innerHTML = '<div class="empty-state">No calibration proposals.</div>';
                 return;
             }
-            list.innerHTML = rows.map(row => `<div class="metric-card"><div class="metric-label">${row.bucket || 'Bucket'}</div><div class="metric-sub">${row.recommendation}</div></div>`).join('');
+            list.innerHTML = rows.map((item) => `
+                <div class="metric-card">
+                    <span class="metric-label">${escapeHtml(item.config_path)}</span>
+                    <strong>${escapeHtml(String(item.current))} → ${escapeHtml(String(item.suggested))}</strong>
+                    <span class="metric-sub">${escapeHtml(item.direction)} | ${escapeHtml(item.confidence)}</span>
+                    <span class="metric-sub">${escapeHtml(item.reason)}</span>
+                </div>
+            `).join('');
         }
 
         function renderCharts(data) {
@@ -590,11 +603,18 @@
                 renderAlerts(data);
                 renderSignals(data);
                 renderOutcomes(data);
-                renderCalibration(data);
                 renderCharts(data);
             } catch (err) {
                 console.error(err);
                 document.getElementById('error-banner').classList.add('show');
+            }
+
+            try {
+                const proposals = await fetchJSON(`/api/v1/analytics/calibration/proposals?days=90&min_samples=30`);
+                renderProposals(proposals);
+            } catch (err) {
+                console.error('Failed to load proposals:', err);
+                document.getElementById('proposal-list').innerHTML = '<div class="empty-state">Failed to load proposals.</div>';
             }
         }
 

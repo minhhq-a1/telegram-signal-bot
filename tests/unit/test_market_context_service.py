@@ -9,7 +9,7 @@ class _Repo:
     def __init__(self, snapshot):
         self.snapshot = snapshot
 
-    def find_snapshot(self, symbol: str, timeframe: str, bar_time):
+    def find_snapshot(self, symbol: str, timeframe: str, bar_time, source: str | None = None, max_age_minutes: int = 10):
         return self.snapshot
 
 

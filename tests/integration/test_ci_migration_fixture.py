@@ -36,6 +36,7 @@ def test_db_fixture_tracks_versioned_migrations(db_session):
         ("007", "007_v12_signal_outcomes.sql"),
         ("008", "008_v12_config_audit.sql"),
         ("009", "009_v12_market_context.sql"),
+        ("010", "010_v13_market_context_index.sql"),
     ]
 
 

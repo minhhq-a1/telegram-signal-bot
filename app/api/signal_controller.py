@@ -12,6 +12,7 @@ from app.repositories.signal_repo import SignalRepository
 from app.repositories.config_repo import ConfigRepository
 from app.repositories.decision_repo import DecisionRepository
 from app.repositories.market_event_repo import MarketEventRepository
+from app.repositories.market_context_repo import MarketContextRepository
 from app.repositories.reverify_repo import ReverifyRepository
 from app.services.filter_engine import FilterEngine
 from app.services.reject_codes import rule_code_to_reject_code
@@ -150,7 +151,7 @@ def reverify_signal(
     # 4. Run filter engine with current config
     config_repo = ConfigRepository(db)
     config = config_repo.get_signal_bot_config()
-    engine = FilterEngine(config, signal_repo, MarketEventRepository(db))
+    engine = FilterEngine(config, signal_repo, MarketEventRepository(db), MarketContextRepository(db))
     result = engine.run(signal_dict)
 
     all_results, reject_code, score_value, score_items = _extract_reverify_metadata(result)
@@ -204,7 +205,7 @@ def reverify_signals_batch(
     signals = list(db.execute(stmt).scalars().unique().all())
     signal_repo = SignalRepository(db)
     config = ConfigRepository(db).get_signal_bot_config()
-    engine = FilterEngine(config, signal_repo, MarketEventRepository(db))
+    engine = FilterEngine(config, signal_repo, MarketEventRepository(db), MarketContextRepository(db))
     persist_results = bool(payload.get("persist_results", True))
 
     summary: dict[str, int] = {}

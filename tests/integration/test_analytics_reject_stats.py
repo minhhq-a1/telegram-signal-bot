@@ -52,7 +52,7 @@ class TestRejectStatsEndpoint:
         sig = make_stored_signal(signal_type="LONG_V73")
         _seed_reject(db_session, sig, "BACKEND_SCORE_THRESHOLD")
 
-        resp = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code")
+        resp = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code", headers={"Authorization": "Bearer test-dash-token"})
         assert resp.status_code == 200
         body = resp.json()
         buckets = {(b["signal_type"], b["reject_code"]): b["count"] for b in body["buckets"]}
@@ -71,7 +71,7 @@ class TestRejectStatsEndpoint:
         _seed_fail_rule(db_session, sig, "SQ_BAD_VOL_REGIME")
         _seed_fail_rule(db_session, sig, "SQ_BAD_MOM_DIRECTION")
 
-        resp = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code")
+        resp = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code", headers={"Authorization": "Bearer test-dash-token"})
         assert resp.status_code == 200
         body = resp.json()
         buckets = {(b["signal_type"], b["reject_code"]): b["count"] for b in body["buckets"]}
@@ -90,8 +90,8 @@ class TestRejectStatsEndpoint:
         _seed_reject(db_session, sig, "SQ_NO_FIRED", severity="HIGH")
         _seed_fail_rule(db_session, sig, "SQ_BAD_MOM_DIRECTION", severity="HIGH")
 
-        resp1 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code")
-        resp2 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code")
+        resp1 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code", headers={"Authorization": "Bearer test-dash-token"})
+        resp2 = client.get("/api/v1/analytics/reject-stats?group_by=signal_type,reject_code", headers={"Authorization": "Bearer test-dash-token"})
 
         assert resp1.status_code == 200
         assert resp2.status_code == 200
@@ -104,7 +104,7 @@ class TestRejectStatsEndpoint:
             sig = make_stored_signal()
             _seed_reject(db_session, sig, "MIN_RR_REQUIRED")
 
-        resp = client.get("/api/v1/analytics/reject-stats")
+        resp = client.get("/api/v1/analytics/reject-stats", headers={"Authorization": "Bearer test-dash-token"})
         assert resp.status_code == 200
         body = resp.json()
         assert body["total_rejects"] == 3

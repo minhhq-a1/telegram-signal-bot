@@ -271,3 +271,26 @@ def test_source_ip_ignores_spoofed_x_forwarded_for(client, db_session, valid_pay
     # TestClient connects from 127.0.0.1 (testclient) — uvicorn resolves client.host
     # to that, ignoring the spoofed X-Forwarded-For. Must NOT be 1.3.3.7.
     assert event.source_ip != "1.3.3.7"
+
+
+def test_webhook_passes_market_context_repo_to_filter_engine(client: TestClient, db_session, valid_payload: dict, monkeypatch):
+    """Issue #35.2: Webhook path must wire MarketContextRepository into FilterEngine"""
+    from app.api import webhook_controller
+    from app.services.filter_engine import FilterEngine
+
+    # Track FilterEngine instantiation
+    original_init = FilterEngine.__init__
+    captured_args = {}
+
+    def capture_init(self, config, signal_repo, market_event_repo, market_context_repo=None):
+        captured_args['market_context_repo'] = market_context_repo
+        original_init(self, config, signal_repo, market_event_repo, market_context_repo)
+
+    monkeypatch.setattr(FilterEngine, '__init__', capture_init)
+
+    response = client.post("/api/v1/webhooks/tradingview", json=valid_payload)
+
+    assert response.status_code == 200
+    # Verify market_context_repo was passed and is not None
+    assert 'market_context_repo' in captured_args
+    assert captured_args['market_context_repo'] is not None

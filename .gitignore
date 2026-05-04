@@ -36,6 +36,7 @@ postgres_data/
 
 # AI Agent Settings
 .antigravity/
+.claude/
 .cursor/
 .agents/plugins/
 plugins/

@@ -47,7 +47,7 @@ def _make_signal(db_session: Session, webhook: WebhookEvent, signal_id: str | No
 
 
 def test_summary_empty_db(client: TestClient):
-    resp = client.get("/api/v1/analytics/summary")
+    resp = client.get("/api/v1/analytics/summary", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["total_signals"] == 0
@@ -85,7 +85,7 @@ def test_summary_returns_correct_counts(client: TestClient, db_session: Session)
     ))
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/summary")
+    resp = client.get("/api/v1/analytics/summary", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["total_signals"] == 2
@@ -94,12 +94,12 @@ def test_summary_returns_correct_counts(client: TestClient, db_session: Session)
 
 
 def test_summary_rejects_days_out_of_range(client: TestClient):
-    assert client.get("/api/v1/analytics/summary?days=0").status_code == 422
-    assert client.get("/api/v1/analytics/summary?days=91").status_code == 422
+    assert client.get("/api/v1/analytics/summary?days=0", headers={"Authorization": "Bearer test-dash-token"}).status_code == 422
+    assert client.get("/api/v1/analytics/summary?days=91", headers={"Authorization": "Bearer test-dash-token"}).status_code == 422
 
 
 def test_timeline_empty_db(client: TestClient):
-    resp = client.get("/api/v1/analytics/signals/timeline")
+    resp = client.get("/api/v1/analytics/signals/timeline", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["count"] == 0
@@ -119,7 +119,7 @@ def test_timeline_returns_signals_with_decision(client: TestClient, db_session: 
     ))
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/signals/timeline")
+    resp = client.get("/api/v1/analytics/signals/timeline", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["count"] == 1
@@ -133,14 +133,14 @@ def test_timeline_days_param_filters(client: TestClient, db_session: Session):
     _make_signal(db_session, wh, signal_id="old-signal", created_at=old_time)
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/signals/timeline?days=7")
+    resp = client.get("/api/v1/analytics/signals/timeline?days=7", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["count"] == 0
 
 
 def test_filter_stats_empty_db(client: TestClient):
-    resp = client.get("/api/v1/analytics/filters/stats")
+    resp = client.get("/api/v1/analytics/filters/stats", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["filter_rules"] == {}
@@ -185,7 +185,7 @@ def test_filter_stats_returns_grouped_by_rule_code(client: TestClient, db_sessio
     ))
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/filters/stats")
+    resp = client.get("/api/v1/analytics/filters/stats", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     rules = data["filter_rules"]
@@ -195,7 +195,7 @@ def test_filter_stats_returns_grouped_by_rule_code(client: TestClient, db_sessio
 
 
 def test_daily_empty_db(client: TestClient):
-    resp = client.get("/api/v1/analytics/daily")
+    resp = client.get("/api/v1/analytics/daily", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["daily"] == {}
@@ -225,7 +225,7 @@ def test_daily_returns_correct_day_buckets(client: TestClient, db_session: Sessi
     ))
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/daily?days=30")
+    resp = client.get("/api/v1/analytics/daily?days=30", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     data = resp.json()
     daily = data["daily"]

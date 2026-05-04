@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.repositories.config_repo import ConfigRepository, _deep_merge
+from app.repositories.config_repo import ConfigRepository, _deep_merge, diff_config_paths
 
 
 # ── _deep_merge unit tests ────────────────────────────────────────────────────
@@ -161,3 +161,123 @@ def test_fallback_config_does_not_share_nested_reference_with_defaults():
     assert ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"] is original_symbols
     assert "POISONED" not in ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG["allowed_symbols"]
     ConfigRepository.reset_cache()
+
+
+# ── Validation tests ──────────────────────────────────────────────────────────
+
+def test_read_path_logs_warning_on_invalid_config():
+    """Read path should log warning but not raise on invalid config."""
+    from sqlalchemy import select
+    from app.domain.models import SystemConfig
+
+    db_mock = MagicMock()
+    mock_record = MagicMock()
+    # Invalid config: wrong type for allowed_symbols (should be list, not string)
+    mock_record.config_value = {
+        "allowed_symbols": "BTCUSDT",  # Invalid: should be list
+    }
+    db_mock.execute.return_value.scalar_one_or_none.return_value = mock_record
+
+    ConfigRepository.reset_cache()
+    repo = ConfigRepository(db=db_mock)
+
+    # Should not raise, just log warning
+    with patch("app.repositories.config_repo.logger") as mock_logger:
+        config = repo.get_signal_bot_config()
+        mock_logger.warning.assert_called_once()
+        assert "signal_bot_config_validation_failed_on_read" in str(mock_logger.warning.call_args)
+
+    # Should still return merged config (with invalid override)
+    assert config is not None
+    ConfigRepository.reset_cache()
+
+
+def test_write_path_raises_on_invalid_config():
+    """Write path should raise ConfigValidationError on invalid config."""
+    from app.services.config_validation import ConfigValidationError
+
+    db_mock = MagicMock()
+    db_mock.execute.return_value.scalar_one_or_none.return_value = None
+
+    repo = ConfigRepository(db=db_mock)
+
+    # Invalid config: wrong type for allowed_symbols
+    invalid_config = {
+        "allowed_symbols": "BTCUSDT",  # Invalid: should be list
+    }
+
+    with pytest.raises(ConfigValidationError):
+        repo.update_config_with_audit(
+            config_key="signal_bot_config",
+            new_value=invalid_config,
+            changed_by="test_user",
+            change_reason="test",
+        )
+
+
+def test_write_path_accepts_valid_config():
+    """Write path should accept valid config."""
+    db_mock = MagicMock()
+    db_mock.execute.return_value.scalar_one_or_none.return_value = None
+
+    repo = ConfigRepository(db=db_mock)
+
+    # Valid partial config (will be merged with defaults)
+    valid_config = {
+        "allowed_symbols": ["ETHUSDT"],
+        "rr_min_base": 2.0,
+    }
+
+    # Should not raise
+    result = repo.update_config_with_audit(
+        config_key="signal_bot_config",
+        new_value=valid_config,
+        changed_by="test_user",
+        change_reason="test",
+    )
+
+    assert result is not None
+
+
+# ── diff_config_paths tests ───────────────────────────────────────────────────
+
+def test_diff_config_paths_detects_scalar_change():
+    old = {"rr_min_base": 1.5}
+    new = {"rr_min_base": 2.0}
+    paths = diff_config_paths(old, new)
+    assert paths == ["rr_min_base"]
+
+
+def test_diff_config_paths_detects_nested_change():
+    old = {"confidence_thresholds": {"5m": 0.78, "1h": 0.70}}
+    new = {"confidence_thresholds": {"5m": 0.81, "1h": 0.70}}
+    paths = diff_config_paths(old, new)
+    assert paths == ["confidence_thresholds.5m"]
+
+
+def test_diff_config_paths_detects_multiple_changes():
+    old = {"confidence_thresholds": {"5m": 0.78, "1h": 0.70}, "rr_min_base": 1.5}
+    new = {"confidence_thresholds": {"5m": 0.81, "1h": 0.75}, "rr_min_base": 2.0}
+    paths = diff_config_paths(old, new)
+    assert set(paths) == {"confidence_thresholds.5m", "confidence_thresholds.1h", "rr_min_base"}
+
+
+def test_diff_config_paths_detects_added_key():
+    old = {"rr_min_base": 1.5}
+    new = {"rr_min_base": 1.5, "new_key": "value"}
+    paths = diff_config_paths(old, new)
+    assert paths == ["new_key"]
+
+
+def test_diff_config_paths_detects_removed_key():
+    old = {"rr_min_base": 1.5, "old_key": "value"}
+    new = {"rr_min_base": 1.5}
+    paths = diff_config_paths(old, new)
+    assert paths == ["old_key"]
+
+
+def test_diff_config_paths_returns_empty_for_identical():
+    old = {"confidence_thresholds": {"5m": 0.78}, "rr_min_base": 1.5}
+    new = {"confidence_thresholds": {"5m": 0.78}, "rr_min_base": 1.5}
+    paths = diff_config_paths(old, new)
+    assert paths == []

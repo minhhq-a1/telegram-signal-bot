@@ -1,4 +1,4 @@
-# QA Strategy — Signal Bot V1.1
+# QA Strategy — Signal Bot V1.3
 <!-- File này là nguồn sự thật chính cho trạng thái QA hiện tại của dự án. -->
 
 ## 1. Mục tiêu
@@ -128,6 +128,61 @@ WHEN query bằng signal_id
 THEN có thể trace: webhook_events -> signals -> signal_filter_results -> signal_decisions -> telegram_messages
 AND tất cả FK liên kết đúng
 AND không có orphan row
+```
+
+### AC-007: Market context advisory (V1.3)
+
+```text
+GIVEN market_context.enabled=true
+AND có snapshot với backend_regime khác payload.regime
+WHEN POST webhook với valid signal
+THEN filter_results có rule_code=BACKEND_REGIME_MISMATCH với result=WARN
+AND decision=PASS_WARNING
+AND telegram_route=WARN
+```
+
+### AC-008: Calibration proposals (V1.3)
+
+```text
+GIVEN có >= 30 closed outcomes trong 90 ngày với avg_r < 0
+WHEN GET /api/v1/analytics/calibration/proposals với dashboard token
+THEN response 200
+AND proposals array có >= 1 item
+AND mỗi proposal có current, suggested, direction, confidence, sample_health
+AND suggested value clamped trong ±0.03 từ current
+```
+
+### AC-009: Config dry-run (V1.3)
+
+```text
+GIVEN valid config patch với change_reason >= 10 chars
+WHEN POST /api/v1/admin/config/signal-bot/dry-run với dashboard token
+THEN response 200
+AND changed_paths list đúng các field thay đổi
+AND config_value là merged result
+AND current_version không thay đổi trong DB
+```
+
+### AC-010: Config rollback (V1.3)
+
+```text
+GIVEN current config version=5
+AND có audit history cho version 4
+WHEN POST /api/v1/admin/config/signal-bot/rollback với target_version=4
+THEN response 200
+AND new_version=6 (không overwrite version 5)
+AND config_value match với version 4 từ audit log
+AND system_configs.version=6
+```
+
+### AC-011: Replay compare mode (V1.3)
+
+```text
+GIVEN payload file và 2 config files (current, proposed)
+WHEN chạy scripts/replay_payloads.py --compare-config-file
+THEN JSONL output có current_decision, proposed_decision, decision_changed
+AND summary output có total, changed_decisions, main_to_warn, pass_to_reject, reject_to_pass
+AND không crash với missing fields
 ```
 
 ## 5. Lệnh verify chuẩn

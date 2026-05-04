@@ -106,6 +106,107 @@ Expected:
 - valid signal có linkage `webhook_events -> signals -> signal_decisions`
 - nếu Telegram fail thì `telegram_messages.delivery_status='FAILED'`
 
+## V1.3 Feature Verification
+
+### 8. Market context advisory (requires market_context.enabled=true)
+
+```bash
+# Insert test market context snapshot
+PGPASSWORD=postgres psql -h localhost -U postgres -d signal_bot -c "
+  INSERT INTO market_context_snapshots (symbol, timeframe, source, bar_time, backend_regime)
+  VALUES ('BTCUSDT', '5m', 'test', NOW(), 'STRONG_TREND_UP');
+"
+
+# Send signal with mismatched regime
+curl -X POST http://localhost:8080/api/v1/webhooks/tradingview \
+  -H "Content-Type: application/json" \
+  -d '{
+    "secret": "YOUR_SECRET",
+    "signal": "long",
+    "symbol": "BTCUSDT",
+    "timeframe": "5",
+    "timestamp": "2026-05-04T06:30:00Z",
+    "price": 68000,
+    "source": "test",
+    "confidence": 0.85,
+    "regime": "WEAK_TREND_DOWN",
+    "metadata": {
+      "entry": 68000,
+      "stop_loss": 67500,
+      "take_profit": 69000
+    }
+  }'
+```
+
+Expected:
+- HTTP `200`
+- `decision="PASS_WARNING"` (nếu market_context.enabled=true)
+- filter_results có `BACKEND_REGIME_MISMATCH` với `result=WARN`
+
+### 9. Calibration proposals (requires dashboard token)
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/analytics/calibration/proposals?days=90&min_samples=30" \
+  -H "Authorization: Bearer YOUR_DASHBOARD_TOKEN"
+```
+
+Expected:
+- HTTP `200`
+- response có `proposals` array (có thể empty nếu chưa có đủ closed outcomes)
+- mỗi proposal có `current`, `suggested`, `direction`, `confidence`, `sample_health`
+
+### 10. Config dry-run (requires dashboard token)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/admin/config/signal-bot/dry-run \
+  -H "Authorization: Bearer YOUR_DASHBOARD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config_value": {
+      "confidence_thresholds": {
+        "5m": 0.81
+      }
+    },
+    "change_reason": "Test dry-run for V1.3 smoke check"
+  }'
+```
+
+Expected:
+- HTTP `200`
+- response có `changed_paths: ["confidence_thresholds.5m"]`
+- response có `config_value` với merged config
+- DB `system_configs.version` không thay đổi
+
+### 11. Replay compare mode
+
+```bash
+# Tạo test config file
+echo '{
+  "allowed_symbols": ["BTCUSDT"],
+  "allowed_timeframes": ["5m"],
+  "confidence_thresholds": {"5m": 0.85},
+  "cooldown_minutes": {"5m": 10},
+  "rr_min_base": 1.5,
+  "rr_min_squeeze": 2.0,
+  "duplicate_price_tolerance_pct": 0.002,
+  "enable_news_block": false,
+  "news_block_before_min": 15,
+  "news_block_after_min": 30,
+  "log_reject_to_admin": true
+}' > /tmp/proposed_config.json
+
+# Run replay compare
+python scripts/replay_payloads.py \
+  --input docs/examples/sample_long_5m.json \
+  --output /tmp/replay_compare.jsonl \
+  --compare-config-file /tmp/proposed_config.json
+```
+
+Expected:
+- Script chạy không crash
+- `/tmp/replay_compare.jsonl` có records với `current_decision`, `proposed_decision`, `decision_changed`
+- Console output có summary: `total`, `changed_decisions`, `main_to_warn`, etc.
+
 ## Go / No-Go
 
 - Go nếu tất cả bước trên đúng expected behavior

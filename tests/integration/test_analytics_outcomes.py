@@ -79,7 +79,7 @@ def _add_outcome(db_session: Session, signal: Signal, outcome_status: str, r_mul
 
 
 def test_outcome_summary_empty(client):
-    resp = client.get("/api/v1/analytics/outcomes/summary")
+    resp = client.get("/api/v1/analytics/outcomes/summary", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["closed_outcomes"] == 0
@@ -97,7 +97,7 @@ def test_outcome_summary_returns_aggregates(client, db_session: Session):
     _add_outcome(db_session, sig3, "OPEN")
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/outcomes/summary")
+    resp = client.get("/api/v1/analytics/outcomes/summary", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200, resp.json()
     body = resp.json()
     assert body["closed_outcomes"] == 2
@@ -108,7 +108,7 @@ def test_outcome_summary_returns_aggregates(client, db_session: Session):
 
 
 def test_outcome_bucket_invalid_group_by_returns_400(client):
-    resp = client.get("/api/v1/analytics/outcomes/by-bucket?group_by=bad")
+    resp = client.get("/api/v1/analytics/outcomes/by-bucket?group_by=bad", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 400
 
 
@@ -118,7 +118,7 @@ def test_outcome_bucket_groups_by_timeframe_and_signal_type(client, db_session: 
     _add_outcome(db_session, sig, "CLOSED", r_multiple=1.0, pnl_pct=0.9)
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/outcomes/by-bucket?group_by=timeframe,signal_type")
+    resp = client.get("/api/v1/analytics/outcomes/by-bucket?group_by=timeframe,signal_type", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200, resp.json()
     body = resp.json()
     assert body["buckets"][0]["timeframe"] == "5m"
@@ -147,7 +147,7 @@ def test_outcome_rules_returns_rule_metrics(client, db_session: Session):
     )
     db_session.commit()
 
-    resp = client.get("/api/v1/analytics/outcomes/rules")
+    resp = client.get("/api/v1/analytics/outcomes/rules", headers={"Authorization": "Bearer test-dash-token"})
     assert resp.status_code == 200, resp.json()
     row = resp.json()["rules"][0]
     assert row["rule_code"] == "LOW_VOLUME_WARNING"

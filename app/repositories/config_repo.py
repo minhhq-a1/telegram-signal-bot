@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.domain.models import SystemConfig, SystemConfigAuditLog
 from app.core.logging import get_logger
+from app.services.config_validation import ConfigValidationError, validate_signal_bot_config
 
 logger = get_logger(__name__)
 
@@ -34,6 +35,21 @@ def _deep_merge(base: dict, override: dict) -> dict:
         else:
             result[key] = copy.deepcopy(base[key])
     return result
+
+
+def diff_config_paths(old: dict, new: dict, prefix: str = "") -> list[str]:
+    """Return list of config paths that differ between old and new."""
+    paths: list[str] = []
+    keys = old.keys() | new.keys()
+    for key in sorted(keys):
+        path = f"{prefix}.{key}" if prefix else str(key)
+        old_value = old.get(key)
+        new_value = new.get(key)
+        if isinstance(old_value, dict) and isinstance(new_value, dict):
+            paths.extend(diff_config_paths(old_value, new_value, path))
+        elif old_value != new_value:
+            paths.append(path)
+    return paths
 
 
 class ConfigRepository:
@@ -133,6 +149,11 @@ class ConfigRepository:
             },
         },
         "auto_create_open_outcomes": False,
+        "market_context": {
+            "enabled": False,
+            "regime_mismatch_mode": "WARN",
+            "snapshot_max_age_minutes": 10,
+        },
     }
 
     def __init__(self, db: Session):
@@ -163,6 +184,11 @@ class ConfigRepository:
                 ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
                 config_record.config_value,
             )
+            # Validate on read (warning only, do not raise)
+            try:
+                validate_signal_bot_config(merged_config)
+            except ConfigValidationError as e:
+                logger.warning(f"signal_bot_config_validation_failed_on_read: {e}")
             # Cập nhật cache
             ConfigRepository._cached_config = merged_config
             ConfigRepository._cache_time = now
@@ -176,8 +202,14 @@ class ConfigRepository:
         stmt = select(SystemConfig).where(SystemConfig.config_key == "signal_bot_config")
         config_record = self.db.execute(stmt).scalar_one_or_none()
         if config_record and config_record.config_value:
+            merged_config = _deep_merge(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG, config_record.config_value)
+            # Validate on read (warning only, do not raise)
+            try:
+                validate_signal_bot_config(merged_config)
+            except ConfigValidationError as e:
+                logger.warning(f"signal_bot_config_validation_failed_on_read: {e}")
             return (
-                _deep_merge(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG, config_record.config_value),
+                merged_config,
                 int(config_record.version or 1),
             )
         return copy.deepcopy(ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG), 1
@@ -189,13 +221,23 @@ class ConfigRepository:
         changed_by: str,
         change_reason: str,
     ) -> SystemConfig:
+        # Validate on write (strict, raise on error)
+        if config_key == "signal_bot_config":
+            merged_for_validation = _deep_merge(
+                ConfigRepository._DEFAULT_SIGNAL_BOT_CONFIG,
+                new_value,
+            )
+            validated_value = validate_signal_bot_config(merged_for_validation)
+        else:
+            validated_value = new_value
+
         stmt = select(SystemConfig).where(SystemConfig.config_key == config_key)
         config = self.db.execute(stmt).scalar_one_or_none()
         if config is None:
             config = SystemConfig(
                 id=str(uuid.uuid4()),
                 config_key=config_key,
-                config_value=new_value,
+                config_value=validated_value,
                 version=1,
                 updated_at=datetime.now(timezone.utc),
             )
@@ -203,7 +245,7 @@ class ConfigRepository:
             old_value = None
         else:
             old_value = copy.deepcopy(config.config_value)
-            config.config_value = new_value
+            config.config_value = validated_value
             config.version = int(config.version or 1) + 1
             config.updated_at = datetime.now(timezone.utc)
 
@@ -211,7 +253,7 @@ class ConfigRepository:
             id=str(uuid.uuid4()),
             config_key=config_key,
             old_value=old_value,
-            new_value=new_value,
+            new_value=validated_value,
             changed_by=changed_by,
             change_reason=change_reason,
             created_at=datetime.now(timezone.utc),
@@ -223,3 +265,28 @@ class ConfigRepository:
     def list_audit_logs(self, limit: int = 50) -> list[SystemConfigAuditLog]:
         stmt = select(SystemConfigAuditLog).order_by(SystemConfigAuditLog.created_at.desc()).limit(limit)
         return list(self.db.execute(stmt).scalars().all())
+
+    def get_config_value_by_version(self, config_key: str, target_version: int) -> dict | None:
+        """Reconstruct config value at a specific version by scanning audit logs."""
+        current = self.db.execute(
+            select(SystemConfig).where(SystemConfig.config_key == config_key)
+        ).scalar_one_or_none()
+        if not current:
+            return None
+        if int(current.version or 1) == target_version:
+            return copy.deepcopy(current.config_value)
+
+        logs = self.db.execute(
+            select(SystemConfigAuditLog)
+            .where(SystemConfigAuditLog.config_key == config_key)
+            .order_by(SystemConfigAuditLog.created_at.desc())
+        ).scalars().all()
+
+        version = int(current.version or 1)
+        for log in logs:
+            if version == target_version:
+                return copy.deepcopy(log.new_value)
+            version -= 1
+            if version == target_version:
+                return copy.deepcopy(log.old_value)
+        return None
