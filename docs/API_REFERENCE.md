@@ -1,8 +1,8 @@
-# API Reference — Signal Bot V1.1
+# API Reference — Signal Bot V1.3
 
 **Base URL:** `https://your-domain.com`
-**API Version:** `v1` (app `1.2.1`)
-**Auth:** Shared secret trong request body (không dùng Authorization header)
+**API Version:** `v1` (app `1.3.0`)
+**Auth:** Shared secret trong request body (không dùng Authorization header) hoặc Bearer token cho dashboard endpoints
 
 ---
 
@@ -15,6 +15,9 @@
 | `GET` | `/api/v1/signals/{signal_id}` | Debug: xem chi tiết signal |
 | `POST` | `/api/v1/signals/{signal_id}/reverify` | Replay filter với config hiện tại |
 | `GET` | `/api/v1/signals/{signal_id}/reverify-results` | Xem lịch sử reverify |
+| `GET` | `/api/v1/analytics/calibration/proposals` | Lấy calibration proposals (V1.3) |
+| `POST` | `/api/v1/admin/config/signal-bot/dry-run` | Dry-run config change (V1.3) |
+| `POST` | `/api/v1/admin/config/signal-bot/rollback` | Rollback config to previous version (V1.3) |
 
 ---
 
@@ -309,6 +312,221 @@ Trả về khi persisted snapshot thiếu field core bắt buộc để replay.
 ```json
 {
   "detail": "Signal not found"
+}
+```
+
+---
+
+## GET `/api/v1/analytics/calibration/proposals`
+
+**Auth:** Requires dashboard token via `Authorization: Bearer <token>` header.
+
+Trả về calibration proposals dựa trên historical signal outcomes. Proposals gợi ý thay đổi confidence thresholds để cải thiện win rate.
+
+### Query Parameters
+
+| Param | Type | Default | Mô tả |
+|---|---|---|---|
+| `days` | int | 90 | Số ngày lịch sử để phân tích (1-365) |
+| `min_samples` | int | 30 | Số lượng sample tối thiểu để tạo proposal (1-1000) |
+
+### Response `200 OK`
+
+```json
+{
+  "period_days": 90,
+  "min_samples": 30,
+  "generated_at": "2026-05-04T06:27:00Z",
+  "current_config_version": 5,
+  "proposals": [
+    {
+      "id": "confidence_thresholds.5m.tighten.20260504",
+      "config_path": "confidence_thresholds.5m",
+      "current": 0.78,
+      "suggested": 0.81,
+      "direction": "TIGHTEN",
+      "reason": "Negative avg R multiple below threshold",
+      "sample_health": {
+        "samples": 85,
+        "win_rate": 0.42,
+        "avg_r": -0.15
+      },
+      "confidence": "MEDIUM",
+      "risk": "May change signal volume on 5m"
+    }
+  ]
+}
+```
+
+**Fields:**
+
+- `direction`: `TIGHTEN` (tăng threshold) hoặc `RELAX` (giảm threshold)
+- `confidence`: `LOW` (< 60 samples), `MEDIUM` (60-120 samples), `HIGH` (> 120 samples)
+- `sample_health`: Thống kê từ closed outcomes trong period
+- `suggested`: Đã được clamped với max step ±0.03 từ current value
+
+### Response `401 Unauthorized`
+
+```json
+{
+  "detail": "Unauthorized"
+}
+```
+
+---
+
+## POST `/api/v1/admin/config/signal-bot/dry-run`
+
+**Auth:** Requires dashboard token via `Authorization: Bearer <token>` header.
+
+Validate config change trước khi apply. Endpoint này không thay đổi live config, chỉ trả về validation result và changed paths.
+
+### Request Body
+
+```json
+{
+  "config_value": {
+    "confidence_thresholds": {
+      "5m": 0.81
+    }
+  },
+  "change_reason": "Raise 5m threshold after calibration review"
+}
+```
+
+**Fields:**
+
+- `config_value`: Partial config object (sẽ được deep merge với current config)
+- `change_reason`: Lý do thay đổi (tối thiểu 10 ký tự)
+
+### Response `200 OK`
+
+```json
+{
+  "config_key": "signal_bot_config",
+  "current_version": 5,
+  "changed_paths": ["confidence_thresholds.5m"],
+  "config_value": {
+    "allowed_symbols": ["BTCUSDT", "BTCUSD"],
+    "confidence_thresholds": {
+      "5m": 0.81,
+      "15m": 0.75
+    }
+  },
+  "warnings": []
+}
+```
+
+**Fields:**
+
+- `changed_paths`: Danh sách dot-notation paths đã thay đổi
+- `config_value`: Full merged config sau validation
+- `current_version`: Version hiện tại (chưa thay đổi)
+
+### Response `400 Bad Request` — Validation Failed
+
+```json
+{
+  "detail": {
+    "error_code": "CONFIG_VALIDATION_FAILED",
+    "message": "confidence_thresholds.5m: must be between 0 and 1"
+  }
+}
+```
+
+### Response `400 Bad Request` — Missing Reason
+
+```json
+{
+  "detail": {
+    "error_code": "CONFIG_REASON_REQUIRED",
+    "message": "change_reason must be at least 10 characters"
+  }
+}
+```
+
+### Response `401 Unauthorized`
+
+```json
+{
+  "detail": "Unauthorized"
+}
+```
+
+---
+
+## POST `/api/v1/admin/config/signal-bot/rollback`
+
+**Auth:** Requires dashboard token via `Authorization: Bearer <token>` header.
+
+Rollback config về version trước đó. Rollback tạo một version mới với giá trị từ target version (không overwrite history).
+
+### Request Body
+
+```json
+{
+  "target_version": 4,
+  "change_reason": "Rollback after replay showed warning route spike"
+}
+```
+
+**Fields:**
+
+- `target_version`: Config version muốn rollback về (phải < current version)
+- `change_reason`: Lý do rollback (tối thiểu 10 ký tự)
+
+### Response `200 OK`
+
+```json
+{
+  "config_key": "signal_bot_config",
+  "previous_version": 5,
+  "new_version": 6,
+  "target_version": 4,
+  "config_value": {
+    "allowed_symbols": ["BTCUSDT", "BTCUSD"],
+    "confidence_thresholds": {
+      "5m": 0.78,
+      "15m": 0.75
+    }
+  }
+}
+```
+
+**Fields:**
+
+- `previous_version`: Version trước khi rollback
+- `new_version`: Version mới sau rollback (previous_version + 1)
+- `target_version`: Version đã rollback về
+- `config_value`: Full config value từ target version
+
+### Response `400 Bad Request` — Invalid Target Version
+
+```json
+{
+  "detail": {
+    "error_code": "INVALID_TARGET_VERSION",
+    "message": "target_version must be less than current version"
+  }
+}
+```
+
+### Response `404 Not Found` — Version Not Found
+
+```json
+{
+  "detail": {
+    "error_code": "VERSION_NOT_FOUND",
+    "message": "Config version 4 not found in audit history"
+  }
+}
+```
+
+### Response `401 Unauthorized`
+
+```json
+{
+  "detail": "Unauthorized"
 }
 ```
 
